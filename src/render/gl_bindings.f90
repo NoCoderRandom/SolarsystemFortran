@@ -57,7 +57,8 @@ module gl_bindings
         glfw_destroy_window, glfw_make_context_current, glfw_swap_buffers, &
         glfw_window_should_close, glfw_get_time, glfw_get_framebuffer_size, &
         glfw_poll_events, glfw_set_key_callback, &
-        glfw_set_framebuffer_size_callback, &
+        glfw_set_framebuffer_size_callback, glfw_set_mouse_button_callback, &
+        glfw_set_cursor_pos_callback, glfw_set_scroll_callback, &
         ! GLAD
         glad_load_gl, &
         ! GL state
@@ -79,7 +80,7 @@ module gl_bindings
         gl_get_uniform_location, gl_uniform_matrix4fv, gl_uniform3f, &
         gl_uniform1f, gl_uniform1i, &
         ! Draw
-        gl_draw_elements_instanced, &
+        gl_draw_elements_instanced, gl_draw_arrays, &
         ! Callback types
         glfw_key_cb_t, glfw_fb_size_cb_t, &
         ! Constants
@@ -290,6 +291,75 @@ contains
         end interface
         prev_cb = glfwSetFramebufferSizeCallback(window%ptr, c_funloc(cb))
     end subroutine glfw_set_framebuffer_size_callback
+
+    subroutine glfw_set_mouse_button_callback(window, cb)
+        type(GLFWwindow), intent(in) :: window
+        interface
+            subroutine glfw_mouse_button_cb_t(w, button, action, mods) bind(c)
+                import :: c_ptr, c_int
+                type(c_ptr), value, intent(in) :: w
+                integer(c_int), value, intent(in) :: button, action, mods
+            end subroutine glfw_mouse_button_cb_t
+        end interface
+        procedure(glfw_mouse_button_cb_t) :: cb
+        type(c_funptr) :: prev_cb
+        interface
+            function glfwSetMouseButtonCallback(w, cb) result(prev) &
+                    bind(c, name="glfwSetMouseButtonCallback")
+                import :: c_ptr, c_funptr
+                type(c_ptr), value, intent(in) :: w
+                type(c_funptr), value, intent(in) :: cb
+                type(c_funptr) :: prev
+            end function glfwSetMouseButtonCallback
+        end interface
+        prev_cb = glfwSetMouseButtonCallback(window%ptr, c_funloc(cb))
+    end subroutine glfw_set_mouse_button_callback
+
+    subroutine glfw_set_cursor_pos_callback(window, cb)
+        type(GLFWwindow), intent(in) :: window
+        interface
+            subroutine glfw_cursor_pos_cb_t(w, xpos, ypos) bind(c)
+                import :: c_ptr, c_double
+                type(c_ptr), value, intent(in) :: w
+                real(c_double), value, intent(in) :: xpos, ypos
+            end subroutine glfw_cursor_pos_cb_t
+        end interface
+        procedure(glfw_cursor_pos_cb_t) :: cb
+        type(c_funptr) :: prev_cb
+        interface
+            function glfwSetCursorPosCallback(w, cb) result(prev) &
+                    bind(c, name="glfwSetCursorPosCallback")
+                import :: c_ptr, c_funptr
+                type(c_ptr), value, intent(in) :: w
+                type(c_funptr), value, intent(in) :: cb
+                type(c_funptr) :: prev
+            end function glfwSetCursorPosCallback
+        end interface
+        prev_cb = glfwSetCursorPosCallback(window%ptr, c_funloc(cb))
+    end subroutine glfw_set_cursor_pos_callback
+
+    subroutine glfw_set_scroll_callback(window, cb)
+        type(GLFWwindow), intent(in) :: window
+        interface
+            subroutine glfw_scroll_cb_t(w, xoffset, yoffset) bind(c)
+                import :: c_ptr, c_double
+                type(c_ptr), value, intent(in) :: w
+                real(c_double), value, intent(in) :: xoffset, yoffset
+            end subroutine glfw_scroll_cb_t
+        end interface
+        procedure(glfw_scroll_cb_t) :: cb
+        type(c_funptr) :: prev_cb
+        interface
+            function glfwSetScrollCallback(w, cb) result(prev) &
+                    bind(c, name="glfwSetScrollCallback")
+                import :: c_ptr, c_funptr
+                type(c_ptr), value, intent(in) :: w
+                type(c_funptr), value, intent(in) :: cb
+                type(c_funptr) :: prev
+            end function glfwSetScrollCallback
+        end interface
+        prev_cb = glfwSetScrollCallback(window%ptr, c_funloc(cb))
+    end subroutine glfw_set_scroll_callback
 
     !=====================================================================
     ! GLAD loader
@@ -807,5 +877,16 @@ contains
         end interface
         call ss_glDrawElementsInstanced(mode, count, type, indices, instancecount)
     end subroutine gl_draw_elements_instanced
+
+    subroutine gl_draw_arrays(mode, first, count)
+        integer(c_int), intent(in) :: mode, first, count
+        interface
+            pure subroutine ss_glDrawArrays(mode, first, count) bind(c, name="ss_glDrawArrays")
+                import :: c_int
+                integer(c_int), value, intent(in) :: mode, first, count
+            end subroutine ss_glDrawArrays
+        end interface
+        call ss_glDrawArrays(mode, first, count)
+    end subroutine gl_draw_arrays
 
 end module gl_bindings

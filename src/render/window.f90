@@ -2,7 +2,8 @@
 ! window.f90 — Window management (1600x900, OpenGL 3.3 Core, ESC close)
 !===============================================================================
 module window
-    use, intrinsic :: iso_c_binding, only: c_int, c_ptr, c_null_ptr, c_double, c_float, c_associated
+    use, intrinsic :: iso_c_binding, only: c_int, c_ptr, c_null_ptr, c_double, c_float, c_associated, &
+        c_funptr, c_funloc
     use gl_bindings, only: GLFWwindow, &
         glfw_init, glfw_terminate, glfw_window_hint, glfw_create_window, &
         glfw_destroy_window, glfw_make_context_current, glfw_swap_buffers, &
@@ -21,7 +22,10 @@ module window
 
     public :: WindowHandle, window_open, window_close, &
               window_should_close, window_swap_buffers, &
-              window_clear, window_poll_events, window_get_time
+              window_clear, window_poll_events, window_get_time, &
+              window_get_size, window_get_glfw_window, &
+              window_set_key_callback, window_set_mouse_button_callback, &
+              window_set_cursor_pos_callback, window_set_scroll_callback
 
     !-----------------------------------------------------------------------
     ! Opaque window handle for the rest of the program
@@ -152,6 +156,19 @@ contains
         t = glfw_get_time()
     end function window_get_time
 
+    subroutine window_get_size(w, h)
+        integer, intent(out) :: w, h
+        integer(c_int) :: fw, fh
+        call glfw_get_framebuffer_size(g_window, fw, fh)
+        w = int(fw)
+        h = int(fh)
+    end subroutine window_get_size
+
+    function window_get_glfw_window() result(win)
+        type(GLFWwindow) :: win
+        win = g_window
+    end function window_get_glfw_window
+
     !=====================================================================
     ! CALLBACKS (C-interoperable — must be module-level, bind(c))
     !=====================================================================
@@ -189,6 +206,119 @@ contains
     !=====================================================================
     ! Helpers
     !=====================================================================
+    subroutine window_set_key_callback(cb)
+        procedure(glfw_key_cb_t) :: cb
+        call glfw_set_key_callback(g_window, cb)
+    end subroutine window_set_key_callback
+
+    subroutine window_set_mouse_button_callback(cb)
+        interface
+            subroutine glfw_mouse_button_cb_t(window, button, action, mods) bind(c)
+                import :: c_ptr, c_int
+                type(c_ptr), value, intent(in) :: window
+                integer(c_int), value, intent(in) :: button, action, mods
+            end subroutine glfw_mouse_button_cb_t
+        end interface
+        procedure(glfw_mouse_button_cb_t) :: cb
+        call glfw_set_mouse_button_callback(g_window, cb)
+    end subroutine window_set_mouse_button_callback
+
+    subroutine window_set_cursor_pos_callback(cb)
+        interface
+            subroutine glfw_cursor_pos_cb_t(window, xpos, ypos) bind(c)
+                import :: c_ptr, c_double
+                type(c_ptr), value, intent(in) :: window
+                real(c_double), value, intent(in) :: xpos, ypos
+            end subroutine glfw_cursor_pos_cb_t
+        end interface
+        procedure(glfw_cursor_pos_cb_t) :: cb
+        call glfw_set_cursor_pos_callback(g_window, cb)
+    end subroutine window_set_cursor_pos_callback
+
+    subroutine window_set_scroll_callback(cb)
+        interface
+            subroutine glfw_scroll_cb_t(window, xoffset, yoffset) bind(c)
+                import :: c_ptr, c_double
+                type(c_ptr), value, intent(in) :: window
+                real(c_double), value, intent(in) :: xoffset, yoffset
+            end subroutine glfw_scroll_cb_t
+        end interface
+        procedure(glfw_scroll_cb_t) :: cb
+        call glfw_set_scroll_callback(g_window, cb)
+    end subroutine window_set_scroll_callback
+
+    !=====================================================================
+    ! GLFW callback wrappers — need C interop
+    !=====================================================================
+    subroutine glfw_set_mouse_button_callback(window, cb)
+        type(GLFWwindow), intent(in) :: window
+        interface
+            subroutine glfw_mouse_button_cb_t(window, button, action, mods) bind(c)
+                import :: c_ptr, c_int
+                type(c_ptr), value, intent(in) :: window
+                integer(c_int), value, intent(in) :: button, action, mods
+            end subroutine glfw_mouse_button_cb_t
+        end interface
+        procedure(glfw_mouse_button_cb_t) :: cb
+        type(c_funptr) :: prev_cb
+        interface
+            function glfwSetMouseButtonCallback(w, cb) result(prev) &
+                    bind(c, name="glfwSetMouseButtonCallback")
+                import :: c_ptr, c_funptr
+                type(c_ptr), value, intent(in) :: w
+                type(c_funptr), value, intent(in) :: cb
+                type(c_funptr) :: prev
+            end function glfwSetMouseButtonCallback
+        end interface
+        prev_cb = glfwSetMouseButtonCallback(window%ptr, c_funloc(cb))
+    end subroutine glfw_set_mouse_button_callback
+
+    subroutine glfw_set_cursor_pos_callback(window, cb)
+        type(GLFWwindow), intent(in) :: window
+        interface
+            subroutine glfw_cursor_pos_cb_t(window, xpos, ypos) bind(c)
+                import :: c_ptr, c_double
+                type(c_ptr), value, intent(in) :: window
+                real(c_double), value, intent(in) :: xpos, ypos
+            end subroutine glfw_cursor_pos_cb_t
+        end interface
+        procedure(glfw_cursor_pos_cb_t) :: cb
+        type(c_funptr) :: prev_cb
+        interface
+            function glfwSetCursorPosCallback(w, cb) result(prev) &
+                    bind(c, name="glfwSetCursorPosCallback")
+                import :: c_ptr, c_funptr
+                type(c_ptr), value, intent(in) :: w
+                type(c_funptr), value, intent(in) :: cb
+                type(c_funptr) :: prev
+            end function glfwSetCursorPosCallback
+        end interface
+        prev_cb = glfwSetCursorPosCallback(window%ptr, c_funloc(cb))
+    end subroutine glfw_set_cursor_pos_callback
+
+    subroutine glfw_set_scroll_callback(window, cb)
+        type(GLFWwindow), intent(in) :: window
+        interface
+            subroutine glfw_scroll_cb_t(window, xoffset, yoffset) bind(c)
+                import :: c_ptr, c_double
+                type(c_ptr), value, intent(in) :: window
+                real(c_double), value, intent(in) :: xoffset, yoffset
+            end subroutine glfw_scroll_cb_t
+        end interface
+        procedure(glfw_scroll_cb_t) :: cb
+        type(c_funptr) :: prev_cb
+        interface
+            function glfwSetScrollCallback(w, cb) result(prev) &
+                    bind(c, name="glfwSetScrollCallback")
+                import :: c_ptr, c_funptr
+                type(c_ptr), value, intent(in) :: w
+                type(c_funptr), value, intent(in) :: cb
+                type(c_funptr) :: prev
+            end function glfwSetScrollCallback
+        end interface
+        prev_cb = glfwSetScrollCallback(window%ptr, c_funloc(cb))
+    end subroutine glfw_set_scroll_callback
+
     subroutine update_fb_size()
         integer(c_int) :: w, h
         call glfw_get_framebuffer_size(g_window, w, h)

@@ -243,6 +243,7 @@ GLAPI void   ss_glUniform1f(GLint location, GLfloat v0);
 GLAPI void   ss_glUniform1i(GLint location, GLint v0);
 GLAPI void   ss_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices);
 GLAPI void   ss_glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instancecount);
+GLAPI void   ss_glDrawArrays(GLenum mode, GLint first, GLsizei count);
 
 #ifdef __cplusplus
 }

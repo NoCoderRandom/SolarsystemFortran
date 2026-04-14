@@ -153,3 +153,4 @@ void ss_glUniform1f(GLint location, GLfloat v0) { glad_glUniform1f(location, v0)
 void ss_glUniform1i(GLint location, GLint v0) { glad_glUniform1i(location, v0); }
 void ss_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices) { glad_glDrawElements(mode, count, type, indices); }
 void ss_glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instancecount) { glad_glDrawElementsInstanced(mode, count, type, indices, instancecount); }
+void ss_glDrawArrays(GLenum mode, GLint first, GLsizei count) { glad_glDrawArrays(mode, first, count); }

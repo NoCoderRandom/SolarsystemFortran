@@ -40,6 +40,9 @@ set(CORE_SOURCES
     src/core/logging.f90
     src/core/constants.f90
     src/core/vector3d.f90
+    src/core/input.f90
+    src/core/config.f90
+    src/core/date_utils.f90
 )
 
 # ---------------------------------------------------------------------------
@@ -63,6 +66,7 @@ set(RENDER_SOURCES
     src/render/camera.f90
     src/render/renderer.f90
     src/render/window.f90
+    src/render/hud_text.f90
 )
 
 # ---------------------------------------------------------------------------
@@ -109,6 +113,19 @@ set_target_properties(test_physics PROPERTIES
 )
 
 # ---------------------------------------------------------------------------
+# Target: test_date_utils (Phase 4, headless)
+# ---------------------------------------------------------------------------
+add_executable(test_date_utils
+    tests/test_date_utils.f90
+    src/core/constants.f90
+    src/core/date_utils.f90
+)
+
+set_target_properties(test_date_utils PROPERTIES
+    Fortran_STANDARD 2018
+)
+
+# ---------------------------------------------------------------------------
 # Copy assets/shaders into build tree for runtime loading
 # ---------------------------------------------------------------------------
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders
@@ -123,6 +140,7 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets
 # ---------------------------------------------------------------------------
 enable_testing()
 add_test(NAME test_physics COMMAND test_physics)
+add_test(NAME test_date_utils COMMAND test_date_utils)
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Fortran compiler: ${CMAKE_Fortran_COMPILER_ID} ${CMAKE_Fortran_COMPILER_VERSION}")

@@ -28,29 +28,53 @@ set(CMAKE_C_FLAGS_RELEASE "-Wall -Wextra -O3 -DNDEBUG")
 find_package(glfw3 3.3 REQUIRED)
 
 # ---------------------------------------------------------------------------
-# GLAD — C source (generated / placed in external/glad)
+# GLAD
 # ---------------------------------------------------------------------------
-set(GLAD_SOURCES
-    external/glad/src/glad.c
-)
-set(GLAD_INCLUDE_DIR
-    ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
+set(GLAD_SOURCES    external/glad/src/glad.c)
+set(GLAD_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include)
+
+# ---------------------------------------------------------------------------
+# Shared sources (used by both solarsim and test_physics)
+# ---------------------------------------------------------------------------
+set(CORE_SOURCES
+    src/core/logging.f90
+    src/core/constants.f90
+    src/core/vector3d.f90
 )
 
 # ---------------------------------------------------------------------------
-# Source files — solarsim (Phase 1 executable)
+# Physics sources
 # ---------------------------------------------------------------------------
-set(SOLARSIM_SOURCES
-    src/core/logging.f90
+set(PHYSICS_SOURCES
+    src/physics/body.f90
+    src/physics/ephemerides.f90
+    src/physics/integrator.f90
+    src/physics/simulation.f90
+)
+
+# ---------------------------------------------------------------------------
+# Render sources (Phase 3+)
+# ---------------------------------------------------------------------------
+set(RENDER_SOURCES
     src/render/gl_bindings.f90
+    src/render/mat4.f90
+    src/render/mesh.f90
+    src/render/shader.f90
+    src/render/camera.f90
+    src/render/renderer.f90
     src/render/window.f90
-    src/main.f90
 )
 
 # ---------------------------------------------------------------------------
 # Target: solarsim
 # ---------------------------------------------------------------------------
-add_executable(solarsim ${SOLARSIM_SOURCES} ${GLAD_SOURCES})
+add_executable(solarsim
+    src/main.f90
+    ${CORE_SOURCES}
+    ${PHYSICS_SOURCES}
+    ${RENDER_SOURCES}
+    ${GLAD_SOURCES}
+)
 
 target_include_directories(solarsim PRIVATE
     ${GLAD_INCLUDE_DIR}
@@ -58,12 +82,29 @@ target_include_directories(solarsim PRIVATE
 
 target_link_libraries(solarsim PRIVATE
     glfw
-    ${CMAKE_DL_LIBS}          # for dlopen / dlsym on Linux
+    ${CMAKE_DL_LIBS}
 )
 
-# Require C11 and Fortran 2018 at the target level
 set_target_properties(solarsim PROPERTIES
     C_STANDARD 11
+    Fortran_STANDARD 2018
+)
+
+# ---------------------------------------------------------------------------
+# Target: test_physics (Phase 2, headless — no render/window deps)
+# ---------------------------------------------------------------------------
+add_executable(test_physics
+    tests/test_physics.f90
+    src/core/logging.f90
+    src/core/constants.f90
+    src/core/vector3d.f90
+    src/physics/body.f90
+    src/physics/ephemerides.f90
+    src/physics/integrator.f90
+    src/physics/simulation.f90
+)
+
+set_target_properties(test_physics PROPERTIES
     Fortran_STANDARD 2018
 )
 
@@ -78,33 +119,9 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets
 )
 
 # ---------------------------------------------------------------------------
-# Physics core (Phase 2) — headless, used by test_physics and later solarsim
-# ---------------------------------------------------------------------------
-set(PHYSICS_SOURCES
-    src/core/constants.f90
-    src/core/vector3d.f90
-    src/physics/body.f90
-    src/physics/ephemerides.f90
-    src/physics/integrator.f90
-    src/physics/simulation.f90
-)
-
-# Physics test executable
-add_executable(test_physics
-    tests/test_physics.f90
-    src/core/logging.f90
-    ${PHYSICS_SOURCES}
-)
-
-set_target_properties(test_physics PROPERTIES
-    Fortran_STANDARD 2018
-)
-
-# ---------------------------------------------------------------------------
 # CTest
 # ---------------------------------------------------------------------------
 enable_testing()
-
 add_test(NAME test_physics COMMAND test_physics)
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")

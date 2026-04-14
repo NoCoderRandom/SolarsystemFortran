@@ -1,7 +1,7 @@
 #ifndef __khrplatform_h_
 #define __khrplatform_h_
 
-/* Minimal KHR platform header for Phase 1 GLAD setup. */
+/* Minimal KHR platform header for Phase 1–3 GLAD setup. */
 
 #include <stdint.h>
 #include <stddef.h>

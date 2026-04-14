@@ -114,6 +114,9 @@ typedef void (APIENTRYP PFNGLVIEWPORTPROC)(GLint x, GLint y, GLsizei w, GLsizei 
 typedef void (APIENTRYP PFNGLCLEARCOLORPROC)(GLfloat r, GLfloat g, GLfloat b, GLfloat a);
 typedef void (APIENTRYP PFNGLCLEARPROC)(GLbitfield mask);
 typedef GLenum (APIENTRYP PFNGLGETERRORPROC)(void);
+typedef void (APIENTRYP PFNGLLINEWIDTHPROC)(GLfloat width);
+typedef void (APIENTRYP PFNGLDEPTHMASKPROC)(GLboolean flag);
+typedef void (APIENTRYP PFNGLBLENDFUNCPROC)(GLenum sfactor, GLenum dfactor);
 
 /* ---- GLAD function pointer variables ---- */
 GLAPI PFNGLGENBUFFERSPROC glad_glGenBuffers;
@@ -157,6 +160,9 @@ GLAPI PFNGLVIEWPORTPROC glad_glViewport;
 GLAPI PFNGLCLEARCOLORPROC glad_glClearColor;
 GLAPI PFNGLCLEARPROC glad_glClear;
 GLAPI PFNGLGETERRORPROC glad_glGetError;
+GLAPI PFNGLLINEWIDTHPROC glad_glLineWidth;
+GLAPI PFNGLDEPTHMASKPROC glad_glDepthMask;
+GLAPI PFNGLBLENDFUNCPROC glad_glBlendFunc;
 
 /* ---- Convenience macros ---- */
 #define glGenBuffers              glad_glGenBuffers
@@ -199,6 +205,9 @@ GLAPI PFNGLGETERRORPROC glad_glGetError;
 #define glClearColor              glad_glClearColor
 #define glClear                   glad_glClear
 #define glGetError                glad_glGetError
+#define glLineWidth               glad_glLineWidth
+#define glDepthMask               glad_glDepthMask
+#define glBlendFunc               glad_glBlendFunc
 
 /* ---- GLAD loader ---- */
 typedef void* (*GLADloadproc)(const char *name);
@@ -212,6 +221,9 @@ GLAPI void   ss_glViewport(GLint x, GLint y, GLsizei w, GLsizei h);
 GLAPI GLenum ss_glGetError(void);
 GLAPI void   ss_glEnable(GLenum cap);
 GLAPI void   ss_glDisable(GLenum cap);
+GLAPI void   ss_glLineWidth(GLfloat width);
+GLAPI void   ss_glDepthMask(GLboolean flag);
+GLAPI void   ss_glBlendFunc(GLenum sfactor, GLenum dfactor);
 GLAPI void   ss_glCullFace(GLenum mode);
 GLAPI void   ss_glFrontFace(GLenum mode);
 GLAPI void   ss_glGenBuffers(GLsizei n, GLuint *out);

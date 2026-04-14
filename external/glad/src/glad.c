@@ -49,6 +49,9 @@ PFNGLVIEWPORTPROC                glad_glViewport                = NULL;
 PFNGLCLEARCOLORPROC              glad_glClearColor              = NULL;
 PFNGLCLEARPROC                   glad_glClear                   = NULL;
 PFNGLGETERRORPROC                glad_glGetError                = NULL;
+PFNGLLINEWIDTHPROC               glad_glLineWidth               = NULL;
+PFNGLDEPTHMASKPROC               glad_glDepthMask               = NULL;
+PFNGLBLENDFUNCPROC               glad_glBlendFunc               = NULL;
 
 static void* glad_gl_get_proc(const char *name) {
     return (void*)glfwGetProcAddress(name);
@@ -103,6 +106,9 @@ int gladLoadGLLoader(GLADloadproc loader) {
     L(glClearColor, PFNGLCLEARCOLORPROC);
     L(glClear, PFNGLCLEARPROC);
     L(glGetError, PFNGLGETERRORPROC);
+    L(glLineWidth, PFNGLLINEWIDTHPROC);
+    L(glDepthMask, PFNGLDEPTHMASKPROC);
+    L(glBlendFunc, PFNGLBLENDFUNCPROC);
 #undef L
     return loaded;
 }
@@ -118,6 +124,9 @@ void ss_glViewport(GLint x, GLint y, GLsizei w, GLsizei h) { glad_glViewport(x, 
 GLenum ss_glGetError(void) { return glad_glGetError(); }
 void ss_glEnable(GLenum cap) { glad_glEnable(cap); }
 void ss_glDisable(GLenum cap) { glad_glDisable(cap); }
+void ss_glLineWidth(GLfloat width) { glad_glLineWidth(width); }
+void ss_glDepthMask(GLboolean flag) { glad_glDepthMask(flag); }
+void ss_glBlendFunc(GLenum sfactor, GLenum dfactor) { glad_glBlendFunc(sfactor, dfactor); }
 void ss_glCullFace(GLenum mode) { glad_glCullFace(mode); }
 void ss_glFrontFace(GLenum mode) { glad_glFrontFace(mode); }
 void ss_glGenBuffers(GLsizei n, GLuint *out) { glad_glGenBuffers(n, out); }

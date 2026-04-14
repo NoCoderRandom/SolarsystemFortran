@@ -50,6 +50,10 @@ module gl_bindings
     integer(c_int), parameter :: GL_LINE_STRIP             = int(z'0003', c_int)
     integer(c_int), parameter :: GL_BLEND                  = int(z'0BE2', c_int)
     integer(c_int), parameter :: GL_LINE                   = int(z'1B01', c_int)
+    integer(c_int), parameter :: GL_SRC_ALPHA              = int(z'0302', c_int)
+    integer(c_int), parameter :: GL_ONE                    = int(z'0001', c_int)
+    integer(c_int), parameter :: GL_ONE_MINUS_SRC_ALPHA    = int(z'0303', c_int)
+    integer(c_int), parameter :: GL_ZERO                   = int(z'0000', c_int)
 
     !-----------------------------------------------------------------------
     ! Public API
@@ -67,6 +71,7 @@ module gl_bindings
         ! GL state
         gl_enable, gl_disable, gl_set_cull_face, gl_set_front_face, &
         gl_clear_color, gl_clear, gl_viewport, &
+        gl_line_width, gl_depth_mask, gl_blend_func, &
         ! Buffers
         gl_gen_buffers, gl_bind_buffer, gl_buffer_data, gl_buffer_subdata, gl_delete_buffers, &
         ! VAOs
@@ -99,6 +104,7 @@ module gl_bindings
         GL_COMPILE_STATUS, GL_LINK_STATUS, GL_INFO_LOG_LENGTH, &
         GL_DEPTH_TEST, GL_CULL_FACE, GL_BACK, GL_CCW, GL_FRONT_FACE, &
         GL_UNSIGNED_INT, GL_LINE_STRIP, GL_BLEND, &
+        GL_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, &
         GLuint_t
 
     !-----------------------------------------------------------------------
@@ -459,6 +465,42 @@ contains
         end interface
         call ss_glViewport(x, y, w, h)
     end subroutine gl_viewport
+
+    subroutine gl_line_width(w)
+        real(c_float), intent(in) :: w
+        interface
+            pure subroutine ss_glLineWidth(w) bind(c, name="ss_glLineWidth")
+                import :: c_float
+                real(c_float), value, intent(in) :: w
+            end subroutine ss_glLineWidth
+        end interface
+        call ss_glLineWidth(w)
+    end subroutine gl_line_width
+
+    subroutine gl_depth_mask(flag)
+        logical, intent(in) :: flag
+        integer(c_int) :: f
+        interface
+            pure subroutine ss_glDepthMask(f) bind(c, name="ss_glDepthMask")
+                import :: c_int
+                integer(c_int), value, intent(in) :: f
+            end subroutine ss_glDepthMask
+        end interface
+        f = 0_c_int
+        if (flag) f = 1_c_int
+        call ss_glDepthMask(f)
+    end subroutine gl_depth_mask
+
+    subroutine gl_blend_func(sfactor, dfactor)
+        integer(c_int), intent(in) :: sfactor, dfactor
+        interface
+            pure subroutine ss_glBlendFunc(s, d) bind(c, name="ss_glBlendFunc")
+                import :: c_int
+                integer(c_int), value, intent(in) :: s, d
+            end subroutine ss_glBlendFunc
+        end interface
+        call ss_glBlendFunc(sfactor, dfactor)
+    end subroutine gl_blend_func
 
     !=====================================================================
     ! Buffers

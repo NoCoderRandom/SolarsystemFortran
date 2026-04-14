@@ -36,7 +36,8 @@ program solarsim
     use hud_text, only: hud_text_t, hud_text_init, hud_text_shutdown, &
                         hud_text_clear, hud_text_draw, hud_text_render
     use trails_mod, only: trails_t, trails_init, trails_shutdown, trails_clear, &
-                          trails_push_body, trails_render, trails_set_visibility
+                          trails_push_body, trails_render, trails_set_visibility, &
+                          trails_set_body_color
     implicit none
 
     ! Physics timestep: 1 hour = 3600 s
@@ -89,12 +90,14 @@ program solarsim
     ! Init renderer, camera, HUD, input, config
     !-----------------------------------------------------------------------
     call renderer_init(renderer, win_w, win_h)
+    call config_init(cfg)
+    au_val = AU
     call trails_init(trails, sim%n_bodies(), cfg%trail_length)
+    call set_trail_colors()
     call seed_trails()
     call camera_init(cam, win_w, win_h)
     call hud_text_init(hud)
     call input_init(inp)
-    call config_init(cfg)
     call register_input_callbacks()
 
     allocate(bodies_prev(sim%n_bodies()))
@@ -373,6 +376,8 @@ contains
     ! Seed trail buffers with current body positions
     !=====================================================================
     subroutine seed_trails()
+        ! Push the initial position once so the first rendered segment goes
+        ! from the seed point to the next simulated position, not from origin.
         integer :: i
         real(c_float) :: pos_au(3)
         do i = 1, sim%n_bodies()
@@ -382,6 +387,15 @@ contains
             call trails_push_body(trails, i, pos_au)
         end do
     end subroutine seed_trails
+
+    subroutine set_trail_colors()
+        integer :: i
+        do i = 1, sim%n_bodies()
+            call trails_set_body_color(trails, i, &
+                sim%bodies(i)%color(1), sim%bodies(i)%color(2), &
+                sim%bodies(i)%color(3))
+        end do
+    end subroutine set_trail_colors
 
     !=====================================================================
     ! Push current interpolated body positions to trail ring buffer

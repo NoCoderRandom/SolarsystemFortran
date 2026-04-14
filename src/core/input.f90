@@ -33,6 +33,9 @@ module input_mod
     integer, parameter, public :: KEY_PLUS    = 61   ! same as '=' (non-shifted)
     integer, parameter, public :: KEY_R       = 82
     integer, parameter, public :: KEY_H       = 72
+    integer, parameter, public :: KEY_T       = 84
+    integer, parameter, public :: KEY_LSHIFT  = 340
+    integer, parameter, public :: KEY_RSHIFT  = 344
     integer, parameter, public :: KEY_ESCAPE  = 256 + 44  ! GLFW_KEY_ESCAPE
     integer, parameter, public :: KEY_TILDE   = 96  ! '`' / '~'
 
@@ -48,10 +51,10 @@ module input_mod
     end type mouse_button_t
 
     type, public :: input_state_t
-        logical :: key_pressed(0:255) = .false.
-        logical :: key_held(0:255) = .false.
-        logical :: key_just_pressed(0:255) = .false.
-        logical :: key_just_released(0:255) = .false.
+        logical :: key_pressed(0:350) = .false.
+        logical :: key_held(0:350) = .false.
+        logical :: key_just_pressed(0:350) = .false.
+        logical :: key_just_released(0:350) = .false.
         type(mouse_button_t) :: mouse
         type(mouse_button_t) :: mouse_just_pressed
         type(mouse_button_t) :: mouse_just_released
@@ -97,7 +100,7 @@ contains
         integer :: i
 
         ! Update key held states
-        do i = 0, 255
+        do i = 0, 350
             if (state%key_just_pressed(i)) state%key_held(i) = .true.
             if (state%key_just_released(i)) state%key_held(i) = .false.
             state%key_just_pressed(i) = .false.
@@ -135,13 +138,13 @@ contains
 
         select case (action)
         case (1_c_int)  ! GLFW_PRESS
-            if (key >= 0 .and. key < 256) then
+            if (key >= 0 .and. key < 351) then
                 g_input%key_held(key) = .true.
                 g_input%key_pressed(key) = .true.
                 g_input%key_just_pressed(key) = .true.
             end if
         case (0_c_int)  ! GLFW_RELEASE
-            if (key >= 0 .and. key < 256) then
+            if (key >= 0 .and. key < 351) then
                 g_input%key_held(key) = .false.
                 g_input%key_pressed(key) = .false.
                 g_input%key_just_released(key) = .true.

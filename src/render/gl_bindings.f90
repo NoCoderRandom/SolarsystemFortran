@@ -47,6 +47,9 @@ module gl_bindings
     integer(c_int), parameter :: GL_CCW                    = int(z'0900', c_int)
     integer(c_int), parameter :: GL_FRONT_FACE             = int(z'0B46', c_int)
     integer, parameter :: GL_UNSIGNED_INT = int(z'1405', c_int)
+    integer(c_int), parameter :: GL_LINE_STRIP             = int(z'0003', c_int)
+    integer(c_int), parameter :: GL_BLEND                  = int(z'0BE2', c_int)
+    integer(c_int), parameter :: GL_LINE                   = int(z'1B01', c_int)
 
     !-----------------------------------------------------------------------
     ! Public API
@@ -65,7 +68,7 @@ module gl_bindings
         gl_enable, gl_disable, gl_set_cull_face, gl_set_front_face, &
         gl_clear_color, gl_clear, gl_viewport, &
         ! Buffers
-        gl_gen_buffers, gl_bind_buffer, gl_buffer_data, gl_delete_buffers, &
+        gl_gen_buffers, gl_bind_buffer, gl_buffer_data, gl_buffer_subdata, gl_delete_buffers, &
         ! VAOs
         gl_gen_vertex_arrays, gl_bind_vertex_array, gl_delete_vertex_arrays, &
         ! Attributes
@@ -95,7 +98,7 @@ module gl_bindings
         GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, &
         GL_COMPILE_STATUS, GL_LINK_STATUS, GL_INFO_LOG_LENGTH, &
         GL_DEPTH_TEST, GL_CULL_FACE, GL_BACK, GL_CCW, GL_FRONT_FACE, &
-        GL_UNSIGNED_INT, &
+        GL_UNSIGNED_INT, GL_LINE_STRIP, GL_BLEND, &
         GLuint_t
 
     !-----------------------------------------------------------------------
@@ -501,6 +504,22 @@ contains
         end interface
         call ss_glBufferData(target, size, data, usage)
     end subroutine gl_buffer_data
+
+    subroutine gl_buffer_subdata(target, offset, size, data)
+        integer(c_int), intent(in) :: target
+        integer(c_int), intent(in) :: offset
+        integer(c_int), intent(in) :: size
+        type(c_ptr), intent(in), value :: data
+        interface
+            pure subroutine ss_glBufferSubData(target, offset, size, data) &
+                    bind(c, name="ss_glBufferSubData")
+                import :: c_int, c_ptr
+                integer(c_int), value, intent(in) :: target, offset, size
+                type(c_ptr), value, intent(in) :: data
+            end subroutine ss_glBufferSubData
+        end interface
+        call ss_glBufferSubData(target, offset, size, data)
+    end subroutine gl_buffer_subdata
 
     subroutine gl_delete_buffers(n, buffers)
         integer(c_int), intent(in) :: n

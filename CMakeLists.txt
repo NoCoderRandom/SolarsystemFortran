@@ -67,6 +67,7 @@ set(RENDER_SOURCES
     src/render/renderer.f90
     src/render/window.f90
     src/render/hud_text.f90
+    src/render/trails.f90
 )
 
 # ---------------------------------------------------------------------------

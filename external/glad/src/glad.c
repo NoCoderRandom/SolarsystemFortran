@@ -11,6 +11,7 @@
 PFNGLGENBUFFERSPROC              glad_glGenBuffers              = NULL;
 PFNGLBINDBUFFERPROC              glad_glBindBuffer              = NULL;
 PFNGLBUFFERDATAPROC              glad_glBufferData              = NULL;
+PFNGLBUFFERSUBDATAPROC          glad_glBufferSubData           = NULL;
 PFNGLDELETEBUFFERSPROC           glad_glDeleteBuffers           = NULL;
 PFNGLGENVERTEXARRAYSPROC         glad_glGenVertexArrays         = NULL;
 PFNGLBINDVERTEXARRAYPROC         glad_glBindVertexArray         = NULL;
@@ -64,6 +65,7 @@ int gladLoadGLLoader(GLADloadproc loader) {
     L(glGenBuffers, PFNGLGENBUFFERSPROC);
     L(glBindBuffer, PFNGLBINDBUFFERPROC);
     L(glBufferData, PFNGLBUFFERDATAPROC);
+    L(glBufferSubData, PFNGLBUFFERSUBDATAPROC);
     L(glDeleteBuffers, PFNGLDELETEBUFFERSPROC);
     L(glGenVertexArrays, PFNGLGENVERTEXARRAYSPROC);
     L(glBindVertexArray, PFNGLBINDVERTEXARRAYPROC);
@@ -121,6 +123,7 @@ void ss_glFrontFace(GLenum mode) { glad_glFrontFace(mode); }
 void ss_glGenBuffers(GLsizei n, GLuint *out) { glad_glGenBuffers(n, out); }
 void ss_glBindBuffer(GLenum target, GLuint buffer) { glad_glBindBuffer(target, buffer); }
 void ss_glBufferData(GLenum target, GLsizeiptr size, const void *data, GLenum usage) { glad_glBufferData(target, size, data, usage); }
+void ss_glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void *data) { glad_glBufferSubData(target, offset, size, data); }
 void ss_glDeleteBuffers(GLsizei n, const GLuint *buffers) { glad_glDeleteBuffers(n, buffers); }
 void ss_glGenVertexArrays(GLsizei n, GLuint *out) { glad_glGenVertexArrays(n, out); }
 void ss_glBindVertexArray(GLuint array) { glad_glBindVertexArray(array); }

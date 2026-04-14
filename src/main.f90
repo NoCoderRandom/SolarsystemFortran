@@ -20,7 +20,7 @@ program solarsim
                          input_key_callback, input_mouse_button_callback, &
                          input_cursor_pos_callback, input_scroll_callback, &
                          KEY_SPACE, KEY_0, KEY_EQUALS, KEY_MINUS, KEY_PLUS, &
-                         KEY_R, KEY_H
+                         KEY_R, KEY_H, KEY_T
     use config_mod, only: sim_config_t, config_init, config_set_time_scale
     use vector3d, only: vec3, operator(*), operator(+)
     use body_mod, only: body_t
@@ -35,6 +35,8 @@ program solarsim
     use constants, only: AU
     use hud_text, only: hud_text_t, hud_text_init, hud_text_shutdown, &
                         hud_text_clear, hud_text_draw, hud_text_render
+    use trails_mod, only: trails_t, trails_init, trails_shutdown, trails_clear, &
+                          trails_push_body, trails_render, trails_set_visibility
     implicit none
 
     ! Physics timestep: 1 hour = 3600 s
@@ -48,6 +50,7 @@ program solarsim
     type(renderer_t)    :: renderer
     type(camera_t)      :: cam
     type(hud_text_t)    :: hud
+    type(trails_t)      :: trails
     type(sim_config_t)  :: cfg
     type(input_state_t) :: inp
     type(velocity_verlet_t) :: verlet
@@ -86,6 +89,8 @@ program solarsim
     ! Init renderer, camera, HUD, input, config
     !-----------------------------------------------------------------------
     call renderer_init(renderer, win_w, win_h)
+    call trails_init(trails, sim%n_bodies(), cfg%trail_length)
+    call seed_trails()
     call camera_init(cam, win_w, win_h)
     call hud_text_init(hud)
     call input_init(inp)
@@ -150,6 +155,9 @@ program solarsim
             call interpolate_bodies(bodies_interp, bodies_prev, sim%bodies, alpha)
         end if
 
+        ! Push current positions to trail ring buffer (every frame)
+        call push_trails()
+
         !-------------------------------------------------------------------
         ! Update camera
         !-------------------------------------------------------------------
@@ -165,6 +173,11 @@ program solarsim
         !-------------------------------------------------------------------
         call window_clear()
         call renderer_render(renderer, bodies_interp)
+
+        ! Render trails (with additive blending)
+        if (cfg%trails_visible) then
+            call trails_render(trails, cam)
+        end if
 
         !-------------------------------------------------------------------
         ! HUD
@@ -245,6 +258,22 @@ contains
         ! Toggle HUD
         if (inp%key_just_pressed(KEY_H)) then
             cfg%hud_visible = .not. cfg%hud_visible
+        end if
+
+        ! Toggle trails (T, Shift+T = clear)
+        if (inp%key_just_pressed(KEY_T)) then
+            if (inp%key_held(340) .or. inp%key_held(344)) then
+                call trails_clear(trails)
+                call seed_trails()
+                call log_msg(LOG_INFO, "Trails cleared")
+            else
+                cfg%trails_visible = .not. cfg%trails_visible
+                if (cfg%trails_visible) then
+                    call log_msg(LOG_INFO, "Trails ON")
+                else
+                    call log_msg(LOG_INFO, "Trails OFF")
+                end if
+            end if
         end if
     end subroutine handle_input
 
@@ -339,5 +368,33 @@ contains
         character(len=12) :: s
         write(s, "(I0)") i
     end function itoa
+
+    !=====================================================================
+    ! Seed trail buffers with current body positions
+    !=====================================================================
+    subroutine seed_trails()
+        integer :: i
+        real(c_float) :: pos_au(3)
+        do i = 1, sim%n_bodies()
+            pos_au(1) = real(sim%bodies(i)%position%x / au_val, c_float)
+            pos_au(2) = real(sim%bodies(i)%position%y / au_val, c_float)
+            pos_au(3) = real(sim%bodies(i)%position%z / au_val, c_float)
+            call trails_push_body(trails, i, pos_au)
+        end do
+    end subroutine seed_trails
+
+    !=====================================================================
+    ! Push current interpolated body positions to trail ring buffer
+    !=====================================================================
+    subroutine push_trails()
+        integer :: i
+        real(c_float) :: pos_au(3)
+        do i = 1, sim%n_bodies()
+            pos_au(1) = real(bodies_interp(i)%position%x / au_val, c_float)
+            pos_au(2) = real(bodies_interp(i)%position%y / au_val, c_float)
+            pos_au(3) = real(bodies_interp(i)%position%z / au_val, c_float)
+            call trails_push_body(trails, i, pos_au)
+        end do
+    end subroutine push_trails
 
 end program solarsim

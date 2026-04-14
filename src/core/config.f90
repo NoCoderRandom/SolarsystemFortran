@@ -22,6 +22,8 @@ module config_mod
         logical      :: paused       = .false.
         integer      :: focus_index   = 0          ! 0=Sun
         logical      :: hud_visible  = .true.
+        logical      :: trails_visible = .true.
+        integer      :: trail_length  = 4096
         character(len=32) :: focus_names(9) = [ &
             "Sun       ", "Mercury   ", "Venus     ", "Earth     ", &
             "Mars      ", "Jupiter   ", "Saturn    ", "Uranus    ", "Neptune   "]

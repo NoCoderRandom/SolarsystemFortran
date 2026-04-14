@@ -3,7 +3,24 @@
 A real-time solar system simulation with realistic gravitational physics
 and modern OpenGL rendering. Built with Fortran 2018 and OpenGL 3.3 Core.
 
-## Phase 1 — Foundation and Build System
+## Phase 2 — Headless Physics Core
+
+N-body gravity engine with Velocity Verlet integrator, J2000 initial
+conditions for 9 bodies (Sun + 8 planets), and conservation verification.
+
+### Run Physics Test
+
+```bash
+cd build
+./test_physics
+```
+
+Expected output — all criteria PASS:
+- Energy drift < 0.1% (actual: ~10⁻⁹%)
+- Angular momentum drift < 0.01% (actual: ~10⁻¹⁴%)
+- Earth orbital period error < 1 day (actual: ~0.35 days)
+
+### Previous: Phase 1 — Foundation
 
 Project skeleton with working toolchain: window, logging, GLAD, GLFW, CMake.
 
@@ -103,8 +120,9 @@ SolarsystemFortran/
 
 | Phase | Scope                                  |
 |-------|----------------------------------------|
-| 2     | Physics: body types, initial conditions|
-| 3     | Integrator: Velocity Verlet            |
+| 1     | Foundation: window, logging, CMake     |
+| 2     | Physics: bodies, J2000, Verlet engine   |
+| 3     | Integrator: RK4, adaptive dt           |
 | 4     | Renderer: point sprites, shaders       |
 | 5     | Camera: orbit camera, zoom             |
 | 6     | Trails: line rendering, fading         |

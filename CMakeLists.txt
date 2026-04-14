@@ -38,9 +38,9 @@ set(GLAD_INCLUDE_DIR
 )
 
 # ---------------------------------------------------------------------------
-# Source files
+# Source files — solarsim (Phase 1 executable)
 # ---------------------------------------------------------------------------
-set(FORTRAN_SOURCES
+set(SOLARSIM_SOURCES
     src/core/logging.f90
     src/render/gl_bindings.f90
     src/render/window.f90
@@ -50,7 +50,7 @@ set(FORTRAN_SOURCES
 # ---------------------------------------------------------------------------
 # Target: solarsim
 # ---------------------------------------------------------------------------
-add_executable(solarsim ${FORTRAN_SOURCES} ${GLAD_SOURCES})
+add_executable(solarsim ${SOLARSIM_SOURCES} ${GLAD_SOURCES})
 
 target_include_directories(solarsim PRIVATE
     ${GLAD_INCLUDE_DIR}
@@ -78,12 +78,34 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets
 )
 
 # ---------------------------------------------------------------------------
-# CTest (placeholder — extended in later phases)
+# Physics core (Phase 2) — headless, used by test_physics and later solarsim
+# ---------------------------------------------------------------------------
+set(PHYSICS_SOURCES
+    src/core/constants.f90
+    src/core/vector3d.f90
+    src/physics/body.f90
+    src/physics/ephemerides.f90
+    src/physics/integrator.f90
+    src/physics/simulation.f90
+)
+
+# Physics test executable
+add_executable(test_physics
+    tests/test_physics.f90
+    src/core/logging.f90
+    ${PHYSICS_SOURCES}
+)
+
+set_target_properties(test_physics PROPERTIES
+    Fortran_STANDARD 2018
+)
+
+# ---------------------------------------------------------------------------
+# CTest
 # ---------------------------------------------------------------------------
 enable_testing()
 
-# Placeholder test — extended in later phases
-# add_test(NAME unit_tests COMMAND tests_runner)
+add_test(NAME test_physics COMMAND test_physics)
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Fortran compiler: ${CMAKE_Fortran_COMPILER_ID} ${CMAKE_Fortran_COMPILER_VERSION}")

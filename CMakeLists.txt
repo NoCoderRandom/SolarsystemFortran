@@ -63,11 +63,14 @@ set(RENDER_SOURCES
     src/render/mat4.f90
     src/render/mesh.f90
     src/render/shader.f90
+    src/render/framebuffer.f90
     src/render/camera.f90
     src/render/renderer.f90
     src/render/window.f90
     src/render/hud_text.f90
     src/render/trails.f90
+    src/render/sun.f90
+    src/render/post.f90
 )
 
 # ---------------------------------------------------------------------------

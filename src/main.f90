@@ -20,8 +20,14 @@ program solarsim
                          input_key_callback, input_mouse_button_callback, &
                          input_cursor_pos_callback, input_scroll_callback, &
                          KEY_SPACE, KEY_0, KEY_EQUALS, KEY_MINUS, KEY_PLUS, &
-                         KEY_R, KEY_H, KEY_T
-    use config_mod, only: sim_config_t, config_init, config_set_time_scale
+                         KEY_R, KEY_H, KEY_T, KEY_B, KEY_LBRACKET, KEY_RBRACKET, &
+                         KEY_F12
+    use config_mod, only: sim_config_t, config_init, config_set_time_scale, &
+                         EXPOSURE_MIN, EXPOSURE_MAX
+    use post_mod, only: post_t, post_init, post_shutdown, post_resize, &
+                        post_begin_scene, post_end_scene, post_apply_bloom_and_tonemap
+    use sun_mod, only: sun_t, sun_init, sun_shutdown, sun_render
+    use gl_bindings, only: gl_read_pixels_rgb, ss_write_png_c
     use vector3d, only: vec3, operator(*), operator(+)
     use body_mod, only: body_t
     use ephemerides, only: load_solar_system
@@ -55,10 +61,13 @@ program solarsim
     type(sim_config_t)  :: cfg
     type(input_state_t) :: inp
     type(velocity_verlet_t) :: verlet
+    type(post_t)        :: post
+    type(sun_t)         :: sun
     real(real64)        :: accumulator, sim_time, last_frame_time, frame_dt
     real(real64)        :: alpha, fps_smooth
     integer             :: frame_count, step_count
-    logical             :: running
+    logical             :: running, auto_screenshot
+    character(len=32)   :: arg1
     integer             :: win_w, win_h
     real(real64)        :: au_val
 
@@ -99,15 +108,23 @@ program solarsim
     call hud_text_init(hud)
     call input_init(inp)
     call register_input_callbacks()
+    call post_init(post, win_w, win_h, cfg%bloom_mips)
+    call sun_init(sun)
 
     allocate(bodies_prev(sim%n_bodies()))
     allocate(bodies_interp(sim%n_bodies()))
     bodies_prev = sim%bodies
+    bodies_interp = sim%bodies
 
     !-----------------------------------------------------------------------
     ! Main loop
     !-----------------------------------------------------------------------
     running = .true.
+    auto_screenshot = .false.
+    if (command_argument_count() >= 1) then
+        call get_command_argument(1, arg1)
+        if (trim(arg1) == "--screenshot") auto_screenshot = .true.
+    end if
     accumulator = 0.0_real64
     sim_time = 0.0_real64
     frame_count = 0
@@ -172,21 +189,43 @@ program solarsim
                                  real(frame_dt, c_float))
 
         !-------------------------------------------------------------------
-        ! Render
+        ! Render — HDR scene into post FBO, then bloom + tonemap to screen
         !-------------------------------------------------------------------
-        call window_clear()
-        call renderer_render(renderer, bodies_interp)
+        call maybe_resize_targets()
 
-        ! Render trails (with additive blending)
+        call post_begin_scene(post, 5.0_c_float / 255.0_c_float, &
+                              7.0_c_float / 255.0_c_float, &
+                              13.0_c_float / 255.0_c_float)
+        renderer%camera = cam
+        call renderer_render(renderer, bodies_interp)
+        call sun_render(sun, bodies_interp(1), cam, &
+                        real(window_get_time(), c_float), &
+                        real(cfg%sun_emissive_mul, c_float))
         if (cfg%trails_visible) then
             call trails_render(trails, cam)
         end if
+        call post_end_scene(post)
+
+        call post_apply_bloom_and_tonemap(post, cfg%bloom_on, &
+            real(cfg%bloom_threshold, c_float), &
+            real(cfg%bloom_intensity, c_float), &
+            real(cfg%exposure, c_float))
 
         !-------------------------------------------------------------------
-        ! HUD
+        ! HUD drawn over tonemapped output in SDR
         !-------------------------------------------------------------------
         if (cfg%hud_visible) then
             call render_hud()
+        end if
+
+        if (inp%key_just_pressed(KEY_F12)) then
+            call take_screenshot()
+        end if
+
+        frame_count = frame_count + 1
+        if (auto_screenshot .and. frame_count == 180) then
+            call take_screenshot()
+            running = .false.
         end if
 
         call window_swap_buffers()
@@ -196,6 +235,8 @@ program solarsim
     ! Clean shutdown
     !-----------------------------------------------------------------------
     call log_msg(LOG_INFO, "Shutting down...")
+    call sun_shutdown(sun)
+    call post_shutdown(post)
     call hud_text_shutdown(hud)
     call input_shutdown()
     call renderer_shutdown(renderer)
@@ -261,6 +302,24 @@ contains
         ! Toggle HUD
         if (inp%key_just_pressed(KEY_H)) then
             cfg%hud_visible = .not. cfg%hud_visible
+        end if
+
+        ! Bloom toggle
+        if (inp%key_just_pressed(KEY_B)) then
+            cfg%bloom_on = .not. cfg%bloom_on
+            if (cfg%bloom_on) then
+                call log_msg(LOG_INFO, "Bloom ON")
+            else
+                call log_msg(LOG_INFO, "Bloom OFF")
+            end if
+        end if
+
+        ! Exposure: [ decreases, ] increases (geometric)
+        if (inp%key_just_pressed(KEY_LBRACKET)) then
+            cfg%exposure = max(cfg%exposure / 1.2, EXPOSURE_MIN)
+        end if
+        if (inp%key_just_pressed(KEY_RBRACKET)) then
+            cfg%exposure = min(cfg%exposure * 1.2, EXPOSURE_MAX)
         end if
 
         ! Toggle trails (T, Shift+T = clear)
@@ -341,6 +400,16 @@ contains
                                1.0_c_float, 0.3_c_float, 0.3_c_float)
         end if
 
+        ! Exposure (only shown when bloom is on)
+        if (cfg%bloom_on) then
+            write(ts_str, "(A,F4.2)") "Exposure: ", cfg%exposure
+            call hud_text_draw(hud, 10.0_c_float, 85.0_c_float, trim(ts_str), &
+                               1.0_c_float, 1.0_c_float, 0.6_c_float)
+        else
+            call hud_text_draw(hud, 10.0_c_float, 85.0_c_float, "Bloom: OFF", &
+                               0.7_c_float, 0.7_c_float, 0.7_c_float)
+        end if
+
         call hud_text_render(hud)
     end subroutine render_hud
 
@@ -365,6 +434,41 @@ contains
             out(i)%acceleration = curr(i)%acceleration
         end do
     end subroutine interpolate_bodies
+
+    !=====================================================================
+    ! Refresh HDR/bloom framebuffers when the window size changes
+    !=====================================================================
+    subroutine maybe_resize_targets()
+        integer :: w, h
+        call window_get_size(w, h)
+        if (w /= win_w .or. h /= win_h) then
+            win_w = w
+            win_h = h
+            call post_resize(post, win_w, win_h)
+        end if
+    end subroutine maybe_resize_targets
+
+    !=====================================================================
+    ! F12 — read back default framebuffer and write screenshots/phase6.png
+    !=====================================================================
+    subroutine take_screenshot()
+        use, intrinsic :: iso_c_binding, only: c_loc, c_signed_char
+        integer(c_int) :: w, h, rc
+        integer(c_signed_char), allocatable, target :: pixels(:)
+
+        w = int(win_w, c_int)
+        h = int(win_h, c_int)
+        allocate(pixels(3 * w * h))
+        call gl_read_pixels_rgb(0_c_int, 0_c_int, w, h, c_loc(pixels(1)))
+
+        rc = ss_write_png_c("screenshots/phase6.png", w, h, c_loc(pixels(1)))
+        if (rc == 1_c_int) then
+            call log_msg(LOG_INFO, "Screenshot: screenshots/phase6.png")
+        else
+            call log_msg(LOG_ERROR, "Screenshot failed")
+        end if
+        deallocate(pixels)
+    end subroutine take_screenshot
 
     pure function itoa(i) result(s)
         integer, intent(in) :: i

@@ -82,7 +82,7 @@ contains
         type(renderer_t), intent(inout) :: renderer
         type(body_t), intent(in) :: bodies(:)
 
-        integer :: n_bodies, i
+        integer :: n_bodies, n_inst, i
         real(c_float) :: pos_au(3), radius_vis, model_arr(16)
         type(mat4) :: model, trans, scale_m
         real(real64) :: r_meters
@@ -94,29 +94,32 @@ contains
         n_bodies = size(bodies)
         if (n_bodies == 0) return
 
-        ! Build instance data
+        ! Build instance data — skip the Sun (sun_mod draws it separately
+        ! with the procedural shader + corona billboard).
+        n_inst = 0
         do i = 1, n_bodies
+            if (trim(bodies(i)%name) == "Sun") cycle
+
             pos_au(1) = real(bodies(i)%position%x / AU, c_float)
             pos_au(2) = real(bodies(i)%position%y / AU, c_float)
             pos_au(3) = real(bodies(i)%position%z / AU, c_float)
 
-            if (trim(bodies(i)%name) == "Sun") then
-                radius_vis = SUN_VISUAL_RADIUS
-            else
-                r_meters = bodies(i)%radius
-                radius_vis = real(VISUAL_K_PLANET * &
-                    log(1.0_real64 + r_meters / R_EARTH), c_float)
-            end if
+            r_meters = bodies(i)%radius
+            radius_vis = real(VISUAL_K_PLANET * &
+                log(1.0_real64 + r_meters / R_EARTH), c_float)
 
             trans = mat4_translate(pos_au(1), pos_au(2), pos_au(3))
             scale_m = mat4_scale_xyz(radius_vis, radius_vis, radius_vis)
             model = mat4_mul_mat4(trans, scale_m)
             model_arr = mat4_to_array(model)
 
-            call write_instance(g_instance_data, i, model_arr, &
+            n_inst = n_inst + 1
+            call write_instance(g_instance_data, n_inst, model_arr, &
                                 bodies(i)%color(1), bodies(i)%color(2), &
                                 bodies(i)%color(3))
         end do
+
+        if (n_inst == 0) return
 
         ! Upload instance buffer
         call gl_bind_vertex_array(renderer%sphere_mesh%vao)
@@ -129,7 +132,7 @@ contains
         renderer%instance_vbo = buf_arr(1)
         call gl_bind_buffer(GL_ARRAY_BUFFER, renderer%instance_vbo)
         call gl_buffer_data(GL_ARRAY_BUFFER, &
-                            int(FLOATS_PER_INSTANCE * 4 * n_bodies, c_int), &
+                            int(FLOATS_PER_INSTANCE * 4 * n_inst, c_int), &
                             c_loc(g_instance_data(1)), GL_DYNAMIC_DRAW)
 
         ! Set up instanced vertex attributes (using offset version)
@@ -173,7 +176,7 @@ contains
         call gl_draw_elements_instanced(GL_TRIANGLES, &
                                         renderer%sphere_mesh%n_idx, &
                                         GL_UNSIGNED_INT, &
-                                        c_null_ptr, int(n_bodies, c_int))
+                                        c_null_ptr, int(n_inst, c_int))
 
         call gl_bind_vertex_array(0_c_int)
     end subroutine renderer_render
@@ -200,7 +203,7 @@ contains
             do i = 1, 4
                 s = 0.0_c_float
                 do k = 1, 4
-                    s = s + a%m(k, i) * b%m(k, j)
+                    s = s + a%m(i, k) * b%m(k, j)
                 end do
                 r%m(i, j) = s
             end do

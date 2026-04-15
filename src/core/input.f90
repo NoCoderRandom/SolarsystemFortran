@@ -38,6 +38,10 @@ module input_mod
     integer, parameter, public :: KEY_RSHIFT  = 344
     integer, parameter, public :: KEY_ESCAPE  = 256 + 44  ! GLFW_KEY_ESCAPE
     integer, parameter, public :: KEY_TILDE   = 96  ! '`' / '~'
+    integer, parameter, public :: KEY_B        = 66
+    integer, parameter, public :: KEY_LBRACKET = 91
+    integer, parameter, public :: KEY_RBRACKET = 93
+    integer, parameter, public :: KEY_F12      = 301
 
     ! Mouse buttons
     integer, parameter, public :: MOUSE_LEFT  = 0

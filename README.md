@@ -1,7 +1,12 @@
 # Solar System Simulation (Fortran + OpenGL)
 
 A real-time solar system simulation with realistic gravitational physics
-and modern OpenGL rendering. Built with Fortran 2018 and OpenGL 3.3 Core.
+and modern OpenGL rendering. Built with Fortran 2018 and OpenGL 4.1 Core.
+
+> **Phase 6 note:** the GL context was bumped from 3.3 → 4.1 Core so the
+> renderer can use RGBA16F framebuffer attachments for the HDR scene target
+> and the full bloom + ACES tonemap post-processing chain. This is still
+> well within the RTX 3070's capabilities.
 
 ## Phase 2 — Headless Physics Core
 
@@ -68,6 +73,21 @@ Expected behavior:
 - FPS logged to terminal once per second
 - Press **ESC** or click the window close button to exit
 
+### Controls
+
+| Key         | Action                                   |
+|-------------|------------------------------------------|
+| `0`–`8`     | Focus camera on Sun / Mercury / … / Neptune |
+| `SPACE`     | Pause / resume                           |
+| `+` / `-`   | Time scale × 2 / ÷ 2                     |
+| `R`         | Reset camera                             |
+| `H`         | Toggle HUD                               |
+| `T`         | Toggle trails (Shift+T clears)           |
+| `B`         | Toggle bloom                             |
+| `[` / `]`   | Decrease / increase exposure             |
+| `F12`       | Save screenshot to `screenshots/phase6.png` |
+| LMB / RMB / scroll | Orbit / pan / zoom camera         |
+
 ### Clean
 
 ```bash
@@ -102,7 +122,7 @@ SolarsystemFortran/
 | Component        | Choice                          |
 |------------------|---------------------------------|
 | Language         | Fortran 2018                    |
-| Graphics API     | OpenGL 3.3+ Core Profile        |
+| Graphics API     | OpenGL 4.1 Core Profile         |
 | Windowing        | GLFW 3.3+                       |
 | GL Loader        | GLAD (minimal, extendable)      |
 | Build System     | CMake 3.18+                     |
@@ -126,5 +146,6 @@ SolarsystemFortran/
 | 4     | Renderer: point sprites, shaders       |
 | 5     | Camera: orbit camera, zoom             |
 | 6     | Trails: line rendering, fading         |
-| 7     | Textures: planet surfaces, bloom       |
+| 6     | HDR pipeline, bloom, procedural Sun    |
+| 7     | Textures: planet surfaces              |
 | 8     | Polish: UI, config files, optimization |

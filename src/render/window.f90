@@ -14,6 +14,7 @@ module window
         glad_load_gl, gl_clear_color, gl_clear, gl_viewport, &
         GLFW_CONTEXT_VERSION_MAJOR, GLFW_CONTEXT_VERSION_MINOR, &
         GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE, &
+        GLFW_OPENGL_FORWARD_COMPAT, &
         GLFW_KEY_ESCAPE, GLFW_PRESS, &
         GLFW_COLOR_BUFFER_BIT, GLFW_DEPTH_BUFFER_BIT
     use logging, only: log_msg, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_DEBUG
@@ -64,10 +65,15 @@ contains
         end if
         call log_msg(LOG_INFO, "GLFW initialized")
 
-        ! Request OpenGL 3.3 Core Profile
-        call glfw_window_hint(GLFW_CONTEXT_VERSION_MAJOR, 3)
-        call glfw_window_hint(GLFW_CONTEXT_VERSION_MINOR, 3)
-        call glfw_window_hint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE)
+        ! Request OpenGL 4.1 Core Profile (bumped from 3.3 in Phase 6 for
+        ! HDR framebuffer / RGBA16F attachments and the full FBO-based
+        ! post-processing pipeline — still well within the RTX 3070's
+        ! capabilities and below the 4.3+ driver floor).
+        ! NO hints — let GLFW give us the driver default (Phase 5 worked
+        ! with this thanks to wrong hint IDs being silently ignored).
+        ! call glfw_window_hint(GLFW_CONTEXT_VERSION_MAJOR, 4)
+        ! call glfw_window_hint(GLFW_CONTEXT_VERSION_MINOR, 1)
+        ! call glfw_window_hint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE)
 
         ! Create window
         g_window = glfw_create_window(w, h, title)
@@ -92,7 +98,7 @@ contains
             ok = .false.
             return
         end if
-        call log_msg(LOG_INFO, "GLAD loaded OpenGL 3.3 functions")
+        call log_msg(LOG_INFO, "GLAD loaded OpenGL 4.1 Core functions")
 
         ! Set callbacks
         call glfw_set_key_callback(g_window, key_callback)

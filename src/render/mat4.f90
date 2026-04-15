@@ -88,16 +88,17 @@ contains
         yy = zz*xx - zx*xz
         yz = zx*xy - zy*xx
 
-        ! Translation
-        tx = -(xx*eye(1) + yx*eye(2) + zx*eye(3))
-        ty = -(xy*eye(1) + yy*eye(2) + zy*eye(3))
-        tz = -(xz*eye(1) + yz*eye(2) + zz*eye(3))
+        ! Translation: t = -R^T · eye, where R has columns (x,y,z)
+        tx = -(xx*eye(1) + xy*eye(2) + xz*eye(3))
+        ty = -(yx*eye(1) + yy*eye(2) + yz*eye(3))
+        tz = -(zx*eye(1) + zy*eye(2) + zz*eye(3))
 
         r%m = 0.0_c_float
-        r%m(1,1) = xx; r%m(1,2) = yx; r%m(1,3) = zx; r%m(1,4) = 0.0_c_float
-        r%m(2,1) = xy; r%m(2,2) = yy; r%m(2,3) = zy; r%m(2,4) = 0.0_c_float
-        r%m(3,1) = xz; r%m(3,2) = yz; r%m(3,3) = zz; r%m(3,4) = 0.0_c_float
-        r%m(4,1) = tx; r%m(4,2) = ty; r%m(4,3) = tz; r%m(4,4) = 1.0_c_float
+        r%m(1,1) = xx; r%m(1,2) = xy; r%m(1,3) = xz; r%m(1,4) = tx
+        r%m(2,1) = yx; r%m(2,2) = yy; r%m(2,3) = yz; r%m(2,4) = ty
+        r%m(3,1) = zx; r%m(3,2) = zy; r%m(3,3) = zz; r%m(3,4) = tz
+        r%m(4,1) = 0.0_c_float; r%m(4,2) = 0.0_c_float
+        r%m(4,3) = 0.0_c_float; r%m(4,4) = 1.0_c_float
     end function mat4_look_at
 
     !=====================================================================
@@ -107,9 +108,9 @@ contains
         real(c_float), intent(in) :: tx, ty, tz
         type(mat4) :: r
         r = mat4_identity()
-        r%m(4,1) = tx
-        r%m(4,2) = ty
-        r%m(4,3) = tz
+        r%m(1,4) = tx
+        r%m(2,4) = ty
+        r%m(3,4) = tz
     end function mat4_translate
 
     !=====================================================================
@@ -147,10 +148,10 @@ contains
         real(c_float), intent(in) :: v(3)
         real(c_float) :: r(3)
         real(c_float) :: w
-        r(1) = m%m(1,1)*v(1) + m%m(2,1)*v(2) + m%m(3,1)*v(3) + m%m(4,1)
-        r(2) = m%m(1,2)*v(1) + m%m(2,2)*v(2) + m%m(3,2)*v(3) + m%m(4,2)
-        r(3) = m%m(1,3)*v(1) + m%m(2,3)*v(2) + m%m(3,3)*v(3) + m%m(4,3)
-        w    = m%m(1,4)*v(1) + m%m(2,4)*v(2) + m%m(3,4)*v(3) + m%m(4,4)
+        r(1) = m%m(1,1)*v(1) + m%m(1,2)*v(2) + m%m(1,3)*v(3) + m%m(1,4)
+        r(2) = m%m(2,1)*v(1) + m%m(2,2)*v(2) + m%m(2,3)*v(3) + m%m(2,4)
+        r(3) = m%m(3,1)*v(1) + m%m(3,2)*v(2) + m%m(3,3)*v(3) + m%m(3,4)
+        w    = m%m(4,1)*v(1) + m%m(4,2)*v(2) + m%m(4,3)*v(3) + m%m(4,4)
         if (abs(w) > 1.0e-7_c_float) then
             r = r / w
         end if

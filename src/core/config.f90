@@ -17,6 +17,15 @@ module config_mod
     ! Body focus indices: 0=Sun, 1=Mercury, ..., 8=Neptune
     integer, parameter, public :: FOCUS_NONE = -1
 
+    ! Phase 6 HDR/bloom defaults
+    real, parameter, public :: BLOOM_THRESHOLD_DEFAULT = 1.0
+    real, parameter, public :: BLOOM_INTENSITY_DEFAULT = 0.85
+    real, parameter, public :: EXPOSURE_DEFAULT        = 1.0
+    real, parameter, public :: EXPOSURE_MIN            = 0.05
+    real, parameter, public :: EXPOSURE_MAX            = 8.0
+    real, parameter, public :: SUN_EMISSIVE_MUL_DEFAULT = 3.5
+    integer, parameter, public :: BLOOM_MIPS_DEFAULT   = 5
+
     type, public :: sim_config_t
         real(real64) :: time_scale   = TIME_SCALE_DEFAULT
         logical      :: paused       = .false.
@@ -24,6 +33,15 @@ module config_mod
         logical      :: hud_visible  = .true.
         logical      :: trails_visible = .true.
         integer      :: trail_length  = 4096
+
+        ! HDR / bloom tunables
+        logical :: bloom_on         = .true.
+        real    :: bloom_threshold  = BLOOM_THRESHOLD_DEFAULT
+        real    :: bloom_intensity  = BLOOM_INTENSITY_DEFAULT
+        integer :: bloom_mips       = BLOOM_MIPS_DEFAULT
+        real    :: exposure         = EXPOSURE_DEFAULT
+        real    :: sun_emissive_mul = SUN_EMISSIVE_MUL_DEFAULT
+
         character(len=32) :: focus_names(9) = [ &
             "Sun       ", "Mercury   ", "Venus     ", "Earth     ", &
             "Mars      ", "Jupiter   ", "Saturn    ", "Uranus    ", "Neptune   "]

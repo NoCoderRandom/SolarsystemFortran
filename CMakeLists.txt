@@ -73,6 +73,7 @@ set(RENDER_SOURCES
     src/render/shader.f90
     src/render/framebuffer.f90
     src/render/camera.f90
+    src/render/display_scale.f90
     src/render/texture.f90
     src/render/material.f90
     src/render/rings.f90
@@ -122,35 +123,34 @@ set_target_properties(solarsim PROPERTIES
 )
 
 # ---------------------------------------------------------------------------
-# Target: test_physics (Phase 2, headless — no render/window deps)
+# Headless test targets — guarded so a GitHub clone without tests/
+# (see .gitignore) still configures and builds cleanly. Tests are kept
+# local-only; the main binary never depends on them.
 # ---------------------------------------------------------------------------
-add_executable(test_physics
-    tests/test_physics.f90
-    src/core/logging.f90
-    src/core/constants.f90
-    src/core/vector3d.f90
-    src/physics/body.f90
-    src/physics/ephemerides.f90
-    src/physics/integrator.f90
-    src/physics/simulation.f90
-)
+set(SOLARSIM_HAS_TESTS FALSE)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_physics.f90"
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_date_utils.f90")
+    set(SOLARSIM_HAS_TESTS TRUE)
 
-set_target_properties(test_physics PROPERTIES
-    Fortran_STANDARD 2018
-)
+    add_executable(test_physics
+        tests/test_physics.f90
+        src/core/logging.f90
+        src/core/constants.f90
+        src/core/vector3d.f90
+        src/physics/body.f90
+        src/physics/ephemerides.f90
+        src/physics/integrator.f90
+        src/physics/simulation.f90
+    )
+    set_target_properties(test_physics PROPERTIES Fortran_STANDARD 2018)
 
-# ---------------------------------------------------------------------------
-# Target: test_date_utils (Phase 4, headless)
-# ---------------------------------------------------------------------------
-add_executable(test_date_utils
-    tests/test_date_utils.f90
-    src/core/constants.f90
-    src/core/date_utils.f90
-)
-
-set_target_properties(test_date_utils PROPERTIES
-    Fortran_STANDARD 2018
-)
+    add_executable(test_date_utils
+        tests/test_date_utils.f90
+        src/core/constants.f90
+        src/core/date_utils.f90
+    )
+    set_target_properties(test_date_utils PROPERTIES Fortran_STANDARD 2018)
+endif()
 
 # ---------------------------------------------------------------------------
 # Copy shaders into build tree on every build so edits take effect immediately
@@ -179,11 +179,13 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/screenshots)
 
 # ---------------------------------------------------------------------------
-# CTest
+# CTest (only registered when the local tests/ directory is present)
 # ---------------------------------------------------------------------------
 enable_testing()
-add_test(NAME test_physics COMMAND test_physics)
-add_test(NAME test_date_utils COMMAND test_date_utils)
+if(SOLARSIM_HAS_TESTS)
+    add_test(NAME test_physics    COMMAND test_physics)
+    add_test(NAME test_date_utils COMMAND test_date_utils)
+endif()
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Fortran compiler: ${CMAKE_Fortran_COMPILER_ID} ${CMAKE_Fortran_COMPILER_VERSION}")

@@ -140,11 +140,14 @@ contains
     !---------------------------------------------------------------
     ! Render the whole belt: one draw per mesh variant.
     !---------------------------------------------------------------
-    subroutine asteroids_render(at, cam, sun_pos, sim_time_sec)
+    subroutine asteroids_render(at, cam, sun_pos, sim_time_sec, &
+                                log_scale, log_k)
         type(asteroids_t), intent(inout) :: at
         type(camera_t), intent(in) :: cam
         real(c_float), intent(in) :: sun_pos(3)
         real(real64), intent(in)  :: sim_time_sec
+        logical, intent(in)       :: log_scale
+        real(c_float), intent(in) :: log_k
 
         real(c_float) :: view_arr(16), proj_arr(16)
         integer :: k
@@ -164,6 +167,11 @@ contains
         call set_uniform_vec3(at%shader, "u_light_color", &
                               1.0_c_float, 0.97_c_float, 0.90_c_float)
         call set_uniform_float(at%shader, "u_ambient", 0.06_c_float)
+        call set_uniform_float(at%shader, "u_log_scale", &
+                               merge(1.0_c_float, 0.0_c_float, log_scale))
+        call set_uniform_vec3(at%shader, "u_log_center", &
+                              sun_pos(1), sun_pos(2), sun_pos(3))
+        call set_uniform_float(at%shader, "u_log_k", log_k)
 
         call gl_enable(GL_DEPTH_TEST)
         call gl_enable(GL_CULL_FACE)

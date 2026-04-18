@@ -170,9 +170,11 @@ contains
     ! restore if it cares — we set the state we need and reset the
     ! bits that would affect opaque rendering downstream.
     !---------------------------------------------------------------
-    subroutine trails_render(trails, cam)
+    subroutine trails_render(trails, cam, log_scale, log_center, log_k)
         type(trails_t), intent(inout) :: trails
         type(camera_t), intent(in) :: cam
+        logical,       intent(in) :: log_scale
+        real(c_float), intent(in) :: log_center(3), log_k
 
         integer :: i, body_base, start_slot, cnt
         integer :: count1, count2, byte_off
@@ -189,6 +191,11 @@ contains
         call set_uniform_int(trails%shader, "u_max_slots", &
                              int(trails%max_slots, c_int))
         call set_uniform_float(trails%shader, "u_gamma", trails%gamma)
+        call set_uniform_float(trails%shader, "u_log_scale", &
+                               merge(1.0_c_float, 0.0_c_float, log_scale))
+        call set_uniform_vec3(trails%shader, "u_log_center", &
+                              log_center(1), log_center(2), log_center(3))
+        call set_uniform_float(trails%shader, "u_log_k", log_k)
 
         call gl_enable(GL_BLEND)
         call gl_blend_func(GL_SRC_ALPHA, GL_ONE)

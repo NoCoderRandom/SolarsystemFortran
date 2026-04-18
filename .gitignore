@@ -47,3 +47,11 @@ desktop.ini
 .env
 .env.local
 *.local
+
+# ---------------------------------------------------------------------------
+# Local-only development aids (kept on disk but not shipped to GitHub)
+# ---------------------------------------------------------------------------
+# Headless regression tests — useful during development, skipped in the
+# public build. CMake guards the test targets so a fresh clone still
+# configures cleanly without this directory present.
+tests/

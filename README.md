@@ -8,11 +8,13 @@
 
 A real-time solar system simulation written in modern **Fortran 2018** with
 a rendering stack built directly on top of **OpenGL 4.1 Core** and **GLFW**.
-The physics core is an N-body gravitational integrator with verified
-conservation of energy and angular momentum; the rendering side is a full
-deferred-to-HDR pipeline with procedural Sun, physically-plausible bloom,
-ACES tonemapping, textured planets, Saturn's rings, a procedural starfield
-and a 15 000-object instanced asteroid belt.
+The physics core is an N-body gravitational integrator seeded with full
+J2000.0 Keplerian elements (a, e, i, Ω, ϖ, L) from Meeus Table 31.A and
+verified for energy and angular-momentum conservation to ~10⁻⁹ % over an
+Earth year. The rendering side is a full deferred-to-HDR pipeline with
+procedural Sun, physically-plausible bloom, ACES tonemapping, textured
+planets, Saturn's rings, a procedural starfield and a 15 000-object
+instanced asteroid belt.
 
 Everything the program needs — window management, OpenGL function loading,
 image I/O, shader compilation, framebuffer setup — is wired up in Fortran
@@ -54,7 +56,7 @@ simulator's own HDR pipeline.
 ## Quick start
 
 ```bash
-# One-shot setup: installs apt deps, configures CMake, builds Release, runs tests.
+# One-shot setup: installs apt deps, configures CMake, builds Release.
 ./install.sh
 
 # Launch the simulator from the project root (wraps cd build && ./solarsim)
@@ -71,7 +73,6 @@ Alternatively:
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j
-ctest --output-on-failure
 ./solarsim
 ```
 
@@ -107,6 +108,16 @@ The CLI takes optional flags that park the camera on a target, render for
 | `F2` | Timestamped screenshot → `screenshots/solarsim_YYYYMMDD_HHMMSS.png` |
 | `F12` | Overwrite screenshot at the configured preset path |
 | `ESC` | Quit |
+
+A top-bar **menu** (File / View / Camera / Help) sits above the viewport
+and mirrors the hotkeys with clickable checkboxes and buttons. Under
+**View** you'll find toggles for trails, HUD, bloom, and **Log-Scale
+Distances** — a visual-only radial compression around the Sun
+(`r' = K · log₁₀(1 + r)`) that gives the inner planets breathing room so
+the whole system fits a textbook-style layout without touching the
+physics. Planets, rings, asteroids and trails all share the same remap so
+orbits stay coherent; toggle it at runtime to flip between real-scale and
+textbook-scale views.
 
 On shutdown the program prints a per-slot performance report (physics,
 scene render, starfield, planets, asteroids, trails, bloom+tonemap) with
@@ -172,9 +183,9 @@ TOML subset — flat key = value only; no arrays, no nested tables.
 
 ```
 SolarsystemFortran/
-├── install.sh               # apt + cmake + build + test
+├── install.sh               # apt + cmake + Release build
 ├── run.sh                   # launch wrapper (cd build && ./solarsim)
-├── CMakeLists.txt           # two executables + ctest + asset copy
+├── CMakeLists.txt           # solarsim target + optional ctest + asset copy
 ├── README.md                # you are here
 ├── TECHNICAL.md             # methods, algorithms, Fortran↔GL interop
 ├── src/
@@ -187,9 +198,11 @@ SolarsystemFortran/
 │   │   ├── config.f90       # sim_config_t, tunables, clamps
 │   │   ├── config_toml.f90  # minimal TOML reader/writer
 │   │   └── perf.f90         # CPU timing slots (tic/toc/report)
+│   ├── ui/
+│   │   └── menu.f90         # top-bar menu + dropdowns + checkbox glyphs
 │   ├── physics/
 │   │   ├── body.f90         # body_t — name, mass, radius, colour, state
-│   │   ├── ephemerides.f90  # J2000 initial conditions for 9 bodies
+│   │   ├── ephemerides.f90  # J2000 Keplerian elements → Cartesian state
 │   │   ├── integrator.f90   # Velocity Verlet, Plummer softening
 │   │   └── simulation.f90   # owns bodies, drives integrator
 │   ├── render/
@@ -202,6 +215,7 @@ SolarsystemFortran/
 │   │   ├── texture.f90      # stb_image → GL texture with sRGB / linear modes
 │   │   ├── material.f90     # per-body material (albedo, normal, night, spec)
 │   │   ├── camera.f90       # orbit camera, logarithmic zoom, smooth focus
+│   │   ├── display_scale.f90# render-time log radial remap (visual only)
 │   │   ├── sun.f90          # procedural Sun surface + corona
 │   │   ├── rings.f90        # Saturn's rings (textured disk)
 │   │   ├── trails.f90       # GPU-buffered fading orbit ribbons
@@ -217,9 +231,6 @@ SolarsystemFortran/
 ├── external/
 │   ├── glad/                # OpenGL function loader (vendored)
 │   └── stb/                 # stb_image.h for PNG/JPG decode (vendored)
-├── tests/
-│   ├── test_physics.f90     # energy + L conservation + Earth period
-│   └── test_date_utils.f90  # J2000 ↔ Gregorian round-trip
 └── screenshots/             # reference renders per phase
 ```
 
@@ -341,8 +352,7 @@ real-time graphics fundamentals.
 | 7     | Textures: planet surfaces, normals, Earth night/specular, Saturn rings |
 | 8     | Polish: starfield, asteroid belt, `config.toml`, perf timers |
 
-Each phase is a self-contained commit with a verifiable demo — earlier
-phases still run as tests (`test_physics`, `test_date_utils`).
+Each phase is a self-contained commit with a verifiable demo.
 
 ---
 

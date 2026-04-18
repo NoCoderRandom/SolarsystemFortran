@@ -73,10 +73,14 @@ cmake .. -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
 cmake --build . -- -j"$(nproc 2>/dev/null || echo 2)"
 
 # ---------------------------------------------------------------------------
-# Step 4 — tests
+# Step 4 — tests (optional; tests/ is local-only and not shipped via git)
 # ---------------------------------------------------------------------------
-echo "==> Running headless tests"
-ctest --output-on-failure
+if [ -f "$ROOT_DIR/tests/test_physics.f90" ]; then
+    echo "==> Running headless tests"
+    ctest --output-on-failure
+else
+    echo "==> No tests/ directory present — skipping ctest"
+fi
 
 cd "$ROOT_DIR"
 

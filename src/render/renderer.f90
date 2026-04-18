@@ -31,6 +31,7 @@ module renderer
                             MATERIAL_GENERIC, MATERIAL_EARTH, MATERIAL_GAS_GIANT, &
                             MATERIAL_SATURN_RINGS
     use rings_mod, only: rings_t, rings_render
+    use display_scale, only: remap_distance
     use logging, only: log_msg, LOG_INFO, LOG_ERROR
     use constants, only: AU
     implicit none
@@ -39,7 +40,15 @@ module renderer
     public :: renderer_t, renderer_init, renderer_render, renderer_shutdown, &
               renderer_set_material, renderer_set_rings, renderer_visual_radius
 
-    real(c_float), parameter :: VISUAL_K_PLANET = 0.25_c_float
+    ! Visual radius scale for planets: rv_AU = K * ln(1 + R_meters / R_earth).
+    ! The log compresses the huge range Sun(696000 km) … Mercury(2440 km) into
+    ! a viewable span. K is tuned so that (a) every planet's body stays smaller
+    ! than the Sun, and (b) at Mercury's perihelion (0.307 AU) the planet still
+    ! clears the Sun's 0.20 AU disc with margin. Jupiter ≈ 0.124 AU, Earth
+    ! ≈ 0.035 AU, Mercury ≈ 0.016 AU — still exaggerated vs. reality (Earth
+    ! in reality would be invisible at this scale) but the relative ordering
+    ! is now physical: Sun > gas giants > ice giants > terrestrials.
+    real(c_float), parameter :: VISUAL_K_PLANET = 0.05_c_float
     real(real64), parameter  :: R_EARTH = 6371000.0_real64
 
     type, public :: renderer_t
@@ -93,10 +102,11 @@ contains
         rv = real(VISUAL_K_PLANET * log(1.0_real64 + r_meters / R_EARTH), c_float)
     end function renderer_visual_radius
 
-    subroutine renderer_render(renderer, bodies, sun_pos)
+    subroutine renderer_render(renderer, bodies, sun_pos, log_scale)
         type(renderer_t), intent(inout) :: renderer
         type(body_t), intent(in) :: bodies(:)
         real(c_float), intent(in) :: sun_pos(3)
+        logical, intent(in) :: log_scale
 
         integer :: i, n_bodies
         real(c_float) :: pos_au(3), radius_vis, model_arr(16)
@@ -141,6 +151,7 @@ contains
             pos_au(1) = real(bodies(i)%position%x / AU, c_float)
             pos_au(2) = real(bodies(i)%position%y / AU, c_float)
             pos_au(3) = real(bodies(i)%position%z / AU, c_float)
+            pos_au = remap_distance(pos_au, sun_pos, log_scale)
             radius_vis = renderer_visual_radius(bodies(i)%radius)
 
             trans = mat4_translate(pos_au(1), pos_au(2), pos_au(3))
@@ -204,6 +215,7 @@ contains
                 saturn_pos(1) = real(bodies(s)%position%x / AU, c_float)
                 saturn_pos(2) = real(bodies(s)%position%y / AU, c_float)
                 saturn_pos(3) = real(bodies(s)%position%z / AU, c_float)
+                saturn_pos = remap_distance(saturn_pos, sun_pos, log_scale)
                 sat_rad = renderer_visual_radius(bodies(s)%radius)
                 ring_model = mat4_translate(saturn_pos(1), saturn_pos(2), saturn_pos(3))
                 ! Rings already generated in planet-radius units; scale to sat_rad.

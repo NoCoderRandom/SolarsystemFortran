@@ -31,6 +31,8 @@ module input_mod
     integer, parameter, public :: KEY_EQUALS  = 61   ! '='
     integer, parameter, public :: KEY_MINUS   = 45   ! '-'
     integer, parameter, public :: KEY_PLUS    = 61   ! same as '=' (non-shifted)
+    integer, parameter, public :: KEY_COMMA   = 44   ! ','  (slow down — fine)
+    integer, parameter, public :: KEY_PERIOD  = 46   ! '.'  (speed up  — fine)
     integer, parameter, public :: KEY_R       = 82
     integer, parameter, public :: KEY_H       = 72
     integer, parameter, public :: KEY_T       = 84
@@ -102,28 +104,24 @@ contains
 
     subroutine input_update(state)
         type(input_state_t), intent(inout) :: state
-        integer :: i
 
-        ! Update key held states
-        do i = 0, 350
-            if (state%key_just_pressed(i)) state%key_held(i) = .true.
-            if (state%key_just_released(i)) state%key_held(i) = .false.
-            state%key_just_pressed(i) = .false.
-            state%key_just_released(i) = .false.
-        end do
+        ! Snapshot callback-populated state into the caller's copy.
+        ! Call AFTER window_poll_events so callbacks have already fired.
+        state = g_input
 
-        ! Clear mouse just events and scroll
-        state%mouse_just_pressed%left = .false.
-        state%mouse_just_pressed%right = .false.
-        state%mouse_just_pressed%middle = .false.
-        state%mouse_just_released%left = .false.
-        state%mouse_just_released%right = .false.
-        state%mouse_just_released%middle = .false.
-        state%mouse_dx = 0.0
-        state%mouse_dy = 0.0
-        state%scroll_dy = 0.0
-
-        g_input = state
+        ! Clear per-frame events on g_input so the next frame starts clean.
+        ! Held state (keys/buttons down, cursor position) stays intact.
+        g_input%key_just_pressed = .false.
+        g_input%key_just_released = .false.
+        g_input%mouse_just_pressed%left = .false.
+        g_input%mouse_just_pressed%right = .false.
+        g_input%mouse_just_pressed%middle = .false.
+        g_input%mouse_just_released%left = .false.
+        g_input%mouse_just_released%right = .false.
+        g_input%mouse_just_released%middle = .false.
+        g_input%mouse_dx = 0.0
+        g_input%mouse_dy = 0.0
+        g_input%scroll_dy = 0.0
     end subroutine input_update
 
     subroutine input_shutdown()
@@ -191,8 +189,8 @@ contains
 
         if (.not. c_associated(window)) return
 
-        g_input%mouse_dx = xpos - g_input%mouse_x
-        g_input%mouse_dy = ypos - g_input%mouse_y
+        g_input%mouse_dx = g_input%mouse_dx + (xpos - g_input%mouse_x)
+        g_input%mouse_dy = g_input%mouse_dy + (ypos - g_input%mouse_y)
         g_input%mouse_x = xpos
         g_input%mouse_y = ypos
     end subroutine input_cursor_pos_callback

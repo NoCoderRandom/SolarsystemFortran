@@ -15,6 +15,21 @@ uniform mat4  u_view;
 uniform mat4  u_proj;
 uniform float u_time;          // simulated seconds since epoch
 
+// Optional log-scale radial compression around u_log_center (Sun position).
+// Matches display_scale.f90 so belt and planets stay consistent.
+uniform float u_log_scale;
+uniform vec3  u_log_center;
+uniform float u_log_k;
+
+vec3 remap_pos(vec3 world) {
+    if (u_log_scale < 0.5) return world;
+    vec3 d = world - u_log_center;
+    float r = length(d);
+    if (r < 1e-6) return world;
+    float new_r = u_log_k * log(1.0 + r) / log(10.0);
+    return u_log_center + d * (new_r / r);
+}
+
 out vec3  v_world;
 out float v_gray;
 
@@ -70,7 +85,9 @@ void main() {
     vec3 pt = vec3(p.x, ct * p.y - st * p.z, st * p.y + ct * p.z);
     vec3 ps = vec3(ca * pt.x - sa * pt.y, sa * pt.x + ca * pt.y, pt.z);
 
-    vec3 world = orbit_pos + ps * scale;
+    // Remap the orbital center (radial compression around Sun) but add the
+    // small local tumble unchanged so asteroids keep their visible size.
+    vec3 world = remap_pos(orbit_pos) + ps * scale;
     gl_Position = u_proj * u_view * vec4(world, 1.0);
     v_world = world;
     v_gray  = gray;

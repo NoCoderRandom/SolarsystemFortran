@@ -20,9 +20,10 @@ program solarsim
                          KEY_SPACE, KEY_0, KEY_EQUALS, KEY_MINUS, KEY_PLUS, &
                          KEY_R, KEY_H, KEY_T, KEY_B, KEY_LBRACKET, KEY_RBRACKET, &
                          KEY_F2, KEY_F12
-    use config_mod, only: sim_config_t, config_init, config_set_time_scale, &
-                         EXPOSURE_MIN, EXPOSURE_MAX
-    use config_toml_mod, only: config_toml_load, config_toml_log
+    use config_mod, only: sim_config_t, config_init, config_set_speed_preset, &
+                         config_step_speed_preset, config_speed_label, &
+                         SPEED_PRESET_COUNT, EXPOSURE_MIN, EXPOSURE_MAX
+    use config_toml_mod, only: config_toml_load, config_toml_log, config_toml_write_default
     use perf_mod, only: perf_tic, perf_toc, perf_report
     use post_mod, only: post_t, post_init, post_shutdown, post_resize, &
                         post_begin_scene, post_end_scene, post_apply_bloom_and_tonemap
@@ -53,12 +54,13 @@ program solarsim
                              starfield_render
     use asteroids_mod, only: asteroids_t, asteroids_init, asteroids_shutdown, &
                              asteroids_render
+    use display_scale, only: K_LOG
     use menu_mod, only: menu_t, menu_item_t, menu_init, menu_shutdown, &
                          menu_update, menu_render, menu_mouse_captured, &
                          menu_pop_action, menu_add_dropdown, menu_add_item, &
-                         menu_set_toggle, menu_set_slider, &
+                         menu_set_toggle, menu_set_slider, menu_set_label, &
                          menu_get_toggle, menu_get_slider, &
-                         ITEM_TOGGLE, ITEM_BUTTON, ITEM_SLIDER, ITEM_SEPARATOR, &
+                         ITEM_TOGGLE, ITEM_BUTTON, ITEM_SLIDER, ITEM_SEPARATOR, ITEM_LABEL, &
                          MENU_BAR_H
     implicit none
 
@@ -69,15 +71,19 @@ program solarsim
     integer, parameter :: FIELD_BLOOM          = 3
     integer, parameter :: FIELD_VSYNC          = 4
     integer, parameter :: FIELD_PAUSED         = 5
+    integer, parameter :: FIELD_LOG_SCALE      = 6
     integer, parameter :: FIELD_EXPOSURE       = 10
     integer, parameter :: FIELD_BLOOM_INT      = 11
-    integer, parameter :: FIELD_TIMESCALE_LOG  = 12
+    integer, parameter :: FIELD_SPEED_LABEL    = 12
+    integer, parameter :: FIELD_SPEED_PRESET   = 13
     !   Action IDs (button targets) — 100+
     integer, parameter :: ACTION_SCREENSHOT    = 100
     integer, parameter :: ACTION_SCREENSHOT_TS = 101
     integer, parameter :: ACTION_QUIT          = 102
     integer, parameter :: ACTION_CAMERA_RESET  = 110
     integer, parameter :: ACTION_FOCUS_BASE    = 120   ! 120..128 for Sun..Neptune
+    integer, parameter :: ACTION_SPEED_SLOWER  = 130
+    integer, parameter :: ACTION_SPEED_FASTER  = 131
 
     ! Physics timestep: 1 hour = 3600 s
     real(real64), parameter :: PHYSICS_DT = 3600.0_real64
@@ -103,7 +109,7 @@ program solarsim
     real(real64)        :: accumulator, sim_time, last_frame_time, frame_dt
     real(real64)        :: alpha, fps_smooth
     integer             :: frame_count, step_count
-    logical             :: running, auto_screenshot
+    logical             :: running, auto_screenshot, config_dirty
     character(len=64)   :: arg1
     character(len=128)  :: screenshot_path = "../screenshots/phase8_overview.png"
     integer             :: screenshot_focus = -1
@@ -175,6 +181,7 @@ program solarsim
     !-----------------------------------------------------------------------
     running = .true.
     auto_screenshot = .false.
+    config_dirty = .false.
     if (command_argument_count() >= 1) then
         call get_command_argument(1, arg1)
         if (trim(arg1) == "--screenshot") auto_screenshot = .true.
@@ -224,12 +231,12 @@ program solarsim
     fps_smooth = 60.0
     last_frame_time = window_get_time()
 
-    call log_msg(LOG_INFO, "Controls: 0-8 focus, SPACE pause, +/- time, R reset, H HUD")
+    call log_msg(LOG_INFO, "Controls: 0-8 focus, SPACE pause, +/- speed, R reset, H HUD")
     call log_msg(LOG_INFO, "         T trails, B bloom, [/] exposure, F2 screenshot")
 
     do while (running)
-        call input_update(inp)
         call window_poll_events()
+        call input_update(inp)
         if (window_should_close()) then
             running = .false.
             cycle
@@ -324,10 +331,12 @@ program solarsim
             sun_pos(2) = real(bodies_interp(1)%position%y / au_val, c_float)
             sun_pos(3) = real(bodies_interp(1)%position%z / au_val, c_float)
             call perf_tic("planets")
-            call renderer_render(renderer, bodies_interp, sun_pos)
+            call renderer_render(renderer, bodies_interp, sun_pos, &
+                                 cfg%distance_log_scale)
             call perf_toc("planets")
             call perf_tic("asteroids")
-            call asteroids_render(belt, cam, sun_pos, sim_time)
+            call asteroids_render(belt, cam, sun_pos, sim_time, &
+                                  cfg%distance_log_scale, K_LOG)
             call perf_toc("asteroids")
         end block
         if (screenshot_focus == -1) then
@@ -339,7 +348,14 @@ program solarsim
         end if
         if (cfg%trails_visible) then
             call perf_tic("trails_draw")
-            call trails_render(trails, cam)
+            block
+                real(c_float) :: sun_pos_trails(3)
+                sun_pos_trails(1) = real(bodies_interp(1)%position%x / au_val, c_float)
+                sun_pos_trails(2) = real(bodies_interp(1)%position%y / au_val, c_float)
+                sun_pos_trails(3) = real(bodies_interp(1)%position%z / au_val, c_float)
+                call trails_render(trails, cam, cfg%distance_log_scale, &
+                                   sun_pos_trails, K_LOG)
+            end block
             call perf_toc("trails_draw")
         end if
         call post_end_scene(post)
@@ -386,6 +402,7 @@ program solarsim
     !-----------------------------------------------------------------------
     ! Clean shutdown
     !-----------------------------------------------------------------------
+    if (config_dirty) call persist_runtime_config()
     call log_msg(LOG_INFO, "Shutting down...")
     call perf_report()
     call asteroids_shutdown(belt)
@@ -443,12 +460,12 @@ contains
             end if
         end if
 
-        ! Time scale: + or = (increase), - (decrease)
+        ! Speed presets: + or = (faster), - (slower)
         if (inp%key_just_pressed(KEY_EQUALS) .or. inp%key_just_pressed(KEY_PLUS)) then
-            call config_set_time_scale(cfg, cfg%time_scale * 2.0_real64)
+            call step_speed_preset(1)
         end if
         if (inp%key_just_pressed(KEY_MINUS)) then
-            call config_set_time_scale(cfg, cfg%time_scale / 2.0_real64)
+            call step_speed_preset(-1)
         end if
 
         ! Reset camera
@@ -496,6 +513,37 @@ contains
         end if
     end subroutine handle_input
 
+    subroutine set_speed_preset(new_idx)
+        integer, intent(in) :: new_idx
+        integer :: old_idx
+
+        old_idx = cfg%speed_preset
+        call config_set_speed_preset(cfg, new_idx)
+        if (cfg%speed_preset /= old_idx) then
+            config_dirty = .true.
+            call persist_runtime_config()
+            call log_msg(LOG_INFO, "Speed: " // trim(config_speed_label(cfg)))
+        end if
+    end subroutine set_speed_preset
+
+    subroutine step_speed_preset(delta)
+        integer, intent(in) :: delta
+        integer :: old_idx
+
+        old_idx = cfg%speed_preset
+        call config_step_speed_preset(cfg, delta)
+        if (cfg%speed_preset /= old_idx) then
+            config_dirty = .true.
+            call persist_runtime_config()
+            call log_msg(LOG_INFO, "Speed: " // trim(config_speed_label(cfg)))
+        end if
+    end subroutine step_speed_preset
+
+    subroutine persist_runtime_config()
+        call config_toml_write_default(cfg, "config.toml")
+        config_dirty = .false.
+    end subroutine persist_runtime_config
+
     !=====================================================================
     ! Focus camera on a body
     !=====================================================================
@@ -517,7 +565,6 @@ contains
     !=====================================================================
     subroutine render_hud_and_menu()
         type(sim_date_t) :: sim_date
-        real(real64) :: time_scale_days
         character(len=32) :: ts_str, fps_str, focus_str, pause_str
         real(c_float) :: y0
 
@@ -541,16 +588,9 @@ contains
                                1.0_c_float, 1.0_c_float, 1.0_c_float)
 
             ! Time scale
-            time_scale_days = cfg%time_scale / 86400.0_real64
-            if (time_scale_days < 1.0_real64) then
-                write(ts_str, "(F0.1,' s/s')") cfg%time_scale
-            else if (time_scale_days < 365.25_real64) then
-                write(ts_str, "(F0.1,' day/s')") time_scale_days
-            else
-                write(ts_str, "(F0.1,' yr/s')") time_scale_days / 365.25_real64
-            end if
+            ts_str = config_speed_label(cfg)
             call hud_text_draw(hud, 10.0_c_float, y0 + 30.0_c_float, &
-                               "Time: " // trim(ts_str), &
+                               "Speed: " // trim(ts_str), &
                                1.0_c_float, 1.0_c_float, 1.0_c_float)
 
             ! Focus
@@ -864,8 +904,6 @@ contains
     ! menu_pop_action.
     !=====================================================================
     subroutine build_menu()
-        use config_mod, only: TIME_SCALE_MIN, TIME_SCALE_MAX, &
-                              EXPOSURE_MIN, EXPOSURE_MAX
         integer :: d_file, d_view, d_camera, d_render, i
         type(menu_item_t) :: it
 
@@ -886,7 +924,7 @@ contains
         call menu_add_item(menu, d_file, it)
 
         !-- View -----------------------------------------------------
-        call menu_add_dropdown(menu, "View", 6, d_view)
+        call menu_add_dropdown(menu, "View", 7, d_view)
         it = blank_item()
         it%kind = ITEM_TOGGLE; it%label = "Show HUD"
         it%field_id = FIELD_HUD; it%bool_value = cfg%hud_visible
@@ -902,6 +940,9 @@ contains
         call menu_add_item(menu, d_view, it)
         it%label = "Pause Simulation"
         it%field_id = FIELD_PAUSED; it%bool_value = cfg%paused
+        call menu_add_item(menu, d_view, it)
+        it%label = "Log-Scale Distances"
+        it%field_id = FIELD_LOG_SCALE; it%bool_value = cfg%distance_log_scale
         call menu_add_item(menu, d_view, it)
 
         !-- Camera ---------------------------------------------------
@@ -921,7 +962,7 @@ contains
         call menu_add_item(menu, d_camera, it)
 
         !-- Render ---------------------------------------------------
-        call menu_add_dropdown(menu, "Render", 4, d_render)
+        call menu_add_dropdown(menu, "Render", 6, d_render)
         it = blank_item()
         it%kind = ITEM_SLIDER; it%label = "Exposure"
         it%field_id = FIELD_EXPOSURE
@@ -937,11 +978,23 @@ contains
         it%value = real(cfg%bloom_intensity, c_float)
         call menu_add_item(menu, d_render, it)
         it = blank_item()
-        it%kind = ITEM_SLIDER; it%label = "Time (log10 s/s)"
-        it%field_id = FIELD_TIMESCALE_LOG
-        it%slider_min = real(log10(TIME_SCALE_MIN), c_float)
-        it%slider_max = real(log10(TIME_SCALE_MAX), c_float)
-        it%value = real(log10(cfg%time_scale), c_float)
+        it%kind = ITEM_LABEL; it%label = "Speed: " // trim(config_speed_label(cfg))
+        it%field_id = FIELD_SPEED_LABEL
+        call menu_add_item(menu, d_render, it)
+        it = blank_item()
+        it%kind = ITEM_BUTTON; it%label = "Slower (-)"
+        it%action_id = ACTION_SPEED_SLOWER
+        call menu_add_item(menu, d_render, it)
+        it = blank_item()
+        it%kind = ITEM_BUTTON; it%label = "Faster (+)"
+        it%action_id = ACTION_SPEED_FASTER
+        call menu_add_item(menu, d_render, it)
+        it = blank_item()
+        it%kind = ITEM_SLIDER; it%label = "Speed Preset"
+        it%field_id = FIELD_SPEED_PRESET
+        it%slider_min = 1.0_c_float
+        it%slider_max = real(SPEED_PRESET_COUNT, c_float)
+        it%value = real(cfg%speed_preset, c_float)
         call menu_add_item(menu, d_render, it)
     end subroutine build_menu
 
@@ -968,9 +1021,11 @@ contains
         call menu_set_toggle(menu, FIELD_BLOOM,  cfg%bloom_on)
         call menu_set_toggle(menu, FIELD_VSYNC,  cfg%vsync)
         call menu_set_toggle(menu, FIELD_PAUSED, cfg%paused)
+        call menu_set_toggle(menu, FIELD_LOG_SCALE, cfg%distance_log_scale)
         call menu_set_slider(menu, FIELD_EXPOSURE,      real(cfg%exposure,        c_float))
         call menu_set_slider(menu, FIELD_BLOOM_INT,     real(cfg%bloom_intensity, c_float))
-        call menu_set_slider(menu, FIELD_TIMESCALE_LOG, real(log10(cfg%time_scale), c_float))
+        call menu_set_label(menu, FIELD_SPEED_LABEL, "Speed: " // trim(config_speed_label(cfg)))
+        call menu_set_slider(menu, FIELD_SPEED_PRESET, real(cfg%speed_preset, c_float))
     end subroutine sync_menu_from_cfg
 
     !=====================================================================
@@ -980,6 +1035,7 @@ contains
         integer :: act
         real(c_float) :: v
         logical :: b
+        integer :: speed_idx
         act = menu_pop_action(menu)
         if (act == 0) return
 
@@ -998,6 +1054,8 @@ contains
                 call window_set_vsync(b)
             case (FIELD_PAUSED)
                 cfg%paused = menu_get_toggle(menu, FIELD_PAUSED)
+            case (FIELD_LOG_SCALE)
+                cfg%distance_log_scale = menu_get_toggle(menu, FIELD_LOG_SCALE)
             end select
             return
         end if
@@ -1009,9 +1067,10 @@ contains
                 cfg%exposure = menu_get_slider(menu, FIELD_EXPOSURE)
             case (FIELD_BLOOM_INT)
                 cfg%bloom_intensity = menu_get_slider(menu, FIELD_BLOOM_INT)
-            case (FIELD_TIMESCALE_LOG)
-                v = menu_get_slider(menu, FIELD_TIMESCALE_LOG)
-                call config_set_time_scale(cfg, 10.0_real64 ** real(v, real64))
+            case (FIELD_SPEED_PRESET)
+                v = menu_get_slider(menu, FIELD_SPEED_PRESET)
+                speed_idx = nint(v)
+                call set_speed_preset(speed_idx)
             end select
             return
         end if
@@ -1026,6 +1085,10 @@ contains
             running = .false.
         case (ACTION_CAMERA_RESET)
             call camera_reset(cam)
+        case (ACTION_SPEED_SLOWER)
+            call step_speed_preset(-1)
+        case (ACTION_SPEED_FASTER)
+            call step_speed_preset(1)
         case default
             if (act >= ACTION_FOCUS_BASE .and. act <= ACTION_FOCUS_BASE + 8) then
                 cfg%focus_index = act - ACTION_FOCUS_BASE

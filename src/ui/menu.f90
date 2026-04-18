@@ -26,7 +26,7 @@ module menu_mod
     public :: menu_t, menu_item_t, menu_init, menu_shutdown
     public :: menu_update, menu_render, menu_mouse_captured
     public :: menu_pop_action, menu_add_dropdown, menu_add_item
-    public :: menu_set_toggle, menu_set_slider
+    public :: menu_set_toggle, menu_set_slider, menu_set_label
     public :: menu_get_toggle, menu_get_slider
 
     ! Item kinds
@@ -59,7 +59,10 @@ module menu_mod
     real(c_float), parameter :: SLIDER_FILL(3) = [0.55_c_float, 0.80_c_float, 1.00_c_float]
 
     type, public :: menu_item_t
-        integer                :: kind         = ITEM_BUTTON
+        ! Default kind=0 marks an empty slot. count_items stops at the first
+        ! kind=0 entry, so menu_add_item can find the next free slot after
+        ! allocate(items(max_items)) default-initializes the array.
+        integer                :: kind         = 0
         character(len=32)      :: label        = ""
         integer                :: field_id     = 0         ! for toggle/slider
         integer                :: action_id    = 0         ! for button
@@ -536,6 +539,23 @@ contains
             end do
         end do
     end subroutine menu_set_slider
+
+    subroutine menu_set_label(menu, field_id, text)
+        type(menu_t), intent(inout) :: menu
+        integer, intent(in) :: field_id
+        character(len=*), intent(in) :: text
+        integer :: i, j
+        if (.not. menu%initialized) return
+        do i = 1, menu%n_drop
+            if (.not. allocated(menu%drop(i)%items)) cycle
+            do j = 1, size(menu%drop(i)%items)
+                if (menu%drop(i)%items(j)%kind == ITEM_LABEL .and. &
+                    menu%drop(i)%items(j)%field_id == field_id) then
+                    menu%drop(i)%items(j)%label = text
+                end if
+            end do
+        end do
+    end subroutine menu_set_label
 
     pure function menu_get_toggle(menu, field_id) result(v)
         type(menu_t), intent(in) :: menu

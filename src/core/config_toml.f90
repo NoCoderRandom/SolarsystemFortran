@@ -8,7 +8,8 @@
 !===============================================================================
 module config_toml_mod
     use, intrinsic :: iso_fortran_env, only: real64
-    use config_mod, only: sim_config_t
+    use config_mod, only: sim_config_t, config_set_speed_preset, &
+                          config_set_time_scale, config_speed_label
     use logging, only: log_msg, LOG_INFO, LOG_WARN, LOG_ERROR
     implicit none
     private
@@ -89,6 +90,7 @@ contains
         write(unit, '(A,L1)') "vsync  = ", cfg%vsync
         write(unit, '(A)') ""
         write(unit, '(A)') "[simulation]"
+        write(unit, '(A,I0)')   "speed_preset   = ", cfg%speed_preset
         write(unit, '(A,F0.1)') "time_scale     = ", cfg%time_scale
         write(unit, '(A,I0)')   "trail_length   = ", cfg%trail_length
         write(unit, '(A,L1)')   "trails_visible = ", cfg%trails_visible
@@ -137,8 +139,8 @@ contains
         write(buf, '(A,I0,A,I0,A,L1)') "window: ", cfg%window_width, "x", &
             cfg%window_height, " vsync=", cfg%vsync
         call log_msg(LOG_INFO, trim(buf))
-        write(buf, '(A,F0.1,A,I0)') "sim: time_scale=", cfg%time_scale, &
-            " s/s trail=", cfg%trail_length
+        write(buf, '(A,A,A,I0)') "sim: speed=", trim(config_speed_label(cfg)), &
+            " trail=", cfg%trail_length
         call log_msg(LOG_INFO, trim(buf))
         write(buf, '(A,L1,A,F0.2,A,F0.2,A,I0)') "bloom: on=", cfg%bloom_on, &
             " thr=", cfg%bloom_threshold, " int=", cfg%bloom_intensity, &
@@ -220,7 +222,14 @@ contains
             end select
         case ("simulation")
             select case (key)
-            case ("time_scale");     read(value, *, iostat=iostat) cfg%time_scale;     handled = .true.
+            case ("speed_preset")
+                read(value, *, iostat=iostat) cfg%speed_preset
+                if (iostat == 0) call config_set_speed_preset(cfg, cfg%speed_preset)
+                handled = .true.
+            case ("time_scale")
+                read(value, *, iostat=iostat) cfg%time_scale
+                if (iostat == 0) call config_set_time_scale(cfg, cfg%time_scale)
+                handled = .true.
             case ("trail_length");   read(value, *, iostat=iostat) cfg%trail_length;   handled = .true.
             case ("trails_visible"); cfg%trails_visible = parse_bool(value);           handled = .true.
             case ("hud_visible");    cfg%hud_visible    = parse_bool(value);           handled = .true.

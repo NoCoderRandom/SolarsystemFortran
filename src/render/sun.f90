@@ -38,8 +38,15 @@ module sun_mod
 
     public :: sun_t, sun_init, sun_shutdown, sun_render
 
-    real(c_float), parameter :: SUN_VISUAL_RADIUS  = 1.2_c_float
-    real(c_float), parameter :: CORONA_SCALE       = 4.5_c_float
+    ! Visual radius in AU. With elliptical orbits, Mercury's perihelion sits
+    ! at 0.307 AU from the Sun centre. Mercury's body (visual radius ~0.016 AU
+    ! under the planet formula) has its near edge at ~0.291 AU at perihelion,
+    ! so the Sun sphere + additive corona billboard together must fit inside
+    ! that envelope — otherwise Mercury visibly clips the Sun's glow when it
+    ! swings closest. Keep the explicit corona restrained and let HDR bloom
+    ! provide most of the apparent glare.
+    real(c_float), parameter :: SUN_VISUAL_RADIUS  = 0.20_c_float
+    real(c_float), parameter :: CORONA_SCALE       = 1.12_c_float
 
     type :: sun_t
         type(mesh_t)           :: sphere
@@ -159,6 +166,8 @@ contains
                               pos_au(1), pos_au(2), pos_au(3))
         call set_uniform_float(sun%corona_shader, "u_radius", &
                                SUN_VISUAL_RADIUS * CORONA_SCALE)
+        call set_uniform_float(sun%corona_shader, "u_disc_ratio", &
+                               1.0_c_float / CORONA_SCALE)
         call set_uniform_float(sun%corona_shader, "u_emissive_mul", emissive_mul)
 
         call gl_enable(GL_BLEND)

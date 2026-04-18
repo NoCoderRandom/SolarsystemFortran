@@ -166,6 +166,8 @@ typedef void (APIENTRYP PFNGLDELETERENDERBUFFERSPROC)(GLsizei n, const GLuint *r
 typedef void (APIENTRYP PFNGLRENDERBUFFERSTORAGEPROC)(GLenum target, GLenum internalFormat, GLsizei width, GLsizei height);
 typedef void (APIENTRYP PFNGLFRAMEBUFFERRENDERBUFFERPROC)(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer);
 typedef void (APIENTRYP PFNGLREADPIXELSPROC)(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void *pixels);
+typedef void (APIENTRYP PFNGLGENERATEMIPMAPPROC)(GLenum target);
+typedef void (APIENTRYP PFNGLGETFLOATVPROC)(GLenum pname, GLfloat *data);
 
 /* ---- Function pointer variables ---- */
 GLAPI PFNGLGENBUFFERSPROC glad_glGenBuffers;
@@ -230,6 +232,8 @@ GLAPI PFNGLDELETERENDERBUFFERSPROC glad_glDeleteRenderbuffers;
 GLAPI PFNGLRENDERBUFFERSTORAGEPROC glad_glRenderbufferStorage;
 GLAPI PFNGLFRAMEBUFFERRENDERBUFFERPROC glad_glFramebufferRenderbuffer;
 GLAPI PFNGLREADPIXELSPROC glad_glReadPixels;
+GLAPI PFNGLGENERATEMIPMAPPROC glad_glGenerateMipmap;
+GLAPI PFNGLGETFLOATVPROC glad_glGetFloatv;
 
 /* ---- GLAD loader ---- */
 typedef void* (*GLADloadproc)(const char *name);
@@ -298,6 +302,8 @@ GLAPI void   ss_glDeleteRenderbuffers(GLsizei n, const GLuint *rb);
 GLAPI void   ss_glRenderbufferStorage(GLenum target, GLenum internalFormat, GLsizei w, GLsizei h);
 GLAPI void   ss_glFramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum rbtarget, GLuint rb);
 GLAPI void   ss_glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum format, GLenum type, void *pixels);
+GLAPI void   ss_glGenerateMipmap(GLenum target);
+GLAPI void   ss_glGetFloatv(GLenum pname, GLfloat *v);
 
 /* Screenshot helper: write RGB8 pixel data as an uncompressed PNG. */
 GLAPI int    ss_write_png(const char *path, int w, int h, const unsigned char *rgb);

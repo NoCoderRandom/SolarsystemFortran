@@ -54,6 +54,13 @@ module camera_mod
 
         ! Computed eye position (derived each frame)
         real(c_float) :: eye(3) = 0.0_c_float
+
+        ! View-up override — screenshots may roll the camera so the
+        ! terminator runs vertically. Default (0,1,0) = ecliptic-north.
+        real(c_float) :: view_up(3) = [0.0_c_float, 1.0_c_float, 0.0_c_float]
+        ! When true, camera_update skips the orbit formula and uses
+        ! whatever eye/focus the caller stashed directly.
+        logical       :: eye_override = .false.
     end type camera_t
 
     ! Sensitivity constants
@@ -99,7 +106,7 @@ contains
             end if
         end if
 
-        call camera_compute_eye(cam)
+        if (.not. cam%eye_override) call camera_compute_eye(cam)
     end subroutine camera_update
 
     subroutine camera_compute_eye(cam)
@@ -181,7 +188,7 @@ contains
         real(c_float) :: m(16)
         real(c_float) :: target(3)
         target = cam%focus
-        mv = mat4_look_at(cam%eye, target, [0.0_c_float, 1.0_c_float, 0.0_c_float])
+        mv = mat4_look_at(cam%eye, target, cam%view_up)
         m = mat4_to_array(mv)
     end function camera_get_view
 

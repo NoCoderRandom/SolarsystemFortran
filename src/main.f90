@@ -1,11 +1,9 @@
 !===============================================================================
-! main.f90 — Solar System Simulation with orbit camera and HUD
+! main.f90 — Solar System Simulation
 !
-! Phase 4 additions:
-!   - Interactive orbit camera (LMB rotate, RMB pan, scroll zoom)
-!   - Keybindings: 0-8 focus bodies, SPACE pause, +/- time scale, R reset, H HUD
-!   - Simulated date display in HUD
-!   - HUD text overlay (FPS, date, time scale, focus, pause)
+! Phase 7: Textured planets with Lambert + Blinn-Phong shading, normal maps,
+!   Earth night lights / ocean specular, atmospheric rim, Saturn rings,
+!   HDR bloom pipeline, orbit camera, HUD.
 !===============================================================================
 program solarsim
     use, intrinsic :: iso_c_binding, only: c_float, c_double, c_int
@@ -15,15 +13,17 @@ program solarsim
     use window,  only: window_open, window_close, &
                        window_should_close, window_swap_buffers, &
                        window_clear, window_poll_events, window_get_time, &
-                       window_get_size
+                       window_get_size, window_set_vsync
     use input_mod, only: input_state_t, input_init, input_update, input_shutdown, &
                          input_key_callback, input_mouse_button_callback, &
                          input_cursor_pos_callback, input_scroll_callback, &
                          KEY_SPACE, KEY_0, KEY_EQUALS, KEY_MINUS, KEY_PLUS, &
                          KEY_R, KEY_H, KEY_T, KEY_B, KEY_LBRACKET, KEY_RBRACKET, &
-                         KEY_F12
+                         KEY_F2, KEY_F12
     use config_mod, only: sim_config_t, config_init, config_set_time_scale, &
                          EXPOSURE_MIN, EXPOSURE_MAX
+    use config_toml_mod, only: config_toml_load, config_toml_log
+    use perf_mod, only: perf_tic, perf_toc, perf_report
     use post_mod, only: post_t, post_init, post_shutdown, post_resize, &
                         post_begin_scene, post_end_scene, post_apply_bloom_and_tonemap
     use sun_mod, only: sun_t, sun_init, sun_shutdown, sun_render
@@ -33,7 +33,12 @@ program solarsim
     use ephemerides, only: load_solar_system
     use integrator, only: velocity_verlet_t
     use simulation, only: simulation_t
-    use renderer, only: renderer_t, renderer_init, renderer_render, renderer_shutdown
+    use renderer, only: renderer_t, renderer_init, renderer_render, renderer_shutdown, &
+                        renderer_set_material, renderer_set_rings
+    use texture_mod, only: texture_load
+    use material_mod, only: material_t, MATERIAL_GENERIC, MATERIAL_EARTH, &
+                            MATERIAL_GAS_GIANT
+    use rings_mod, only: rings_t, rings_init, rings_destroy
     use camera_mod, only: camera_t, camera_init, camera_update, camera_get_view, &
                           camera_get_projection, camera_reset, camera_set_focus, &
                           camera_handle_input
@@ -44,7 +49,35 @@ program solarsim
     use trails_mod, only: trails_t, trails_init, trails_shutdown, trails_clear, &
                           trails_push_body, trails_render, trails_set_visibility, &
                           trails_set_body_color
+    use starfield_mod, only: starfield_t, starfield_init, starfield_shutdown, &
+                             starfield_render
+    use asteroids_mod, only: asteroids_t, asteroids_init, asteroids_shutdown, &
+                             asteroids_render
+    use menu_mod, only: menu_t, menu_item_t, menu_init, menu_shutdown, &
+                         menu_update, menu_render, menu_mouse_captured, &
+                         menu_pop_action, menu_add_dropdown, menu_add_item, &
+                         menu_set_toggle, menu_set_slider, &
+                         menu_get_toggle, menu_get_slider, &
+                         ITEM_TOGGLE, ITEM_BUTTON, ITEM_SLIDER, ITEM_SEPARATOR, &
+                         MENU_BAR_H
     implicit none
+
+    !-- Menu field / action enum --------------------------------------
+    !   Field IDs (toggle or slider targets) — keep below 100
+    integer, parameter :: FIELD_HUD            = 1
+    integer, parameter :: FIELD_TRAILS         = 2
+    integer, parameter :: FIELD_BLOOM          = 3
+    integer, parameter :: FIELD_VSYNC          = 4
+    integer, parameter :: FIELD_PAUSED         = 5
+    integer, parameter :: FIELD_EXPOSURE       = 10
+    integer, parameter :: FIELD_BLOOM_INT      = 11
+    integer, parameter :: FIELD_TIMESCALE_LOG  = 12
+    !   Action IDs (button targets) — 100+
+    integer, parameter :: ACTION_SCREENSHOT    = 100
+    integer, parameter :: ACTION_SCREENSHOT_TS = 101
+    integer, parameter :: ACTION_QUIT          = 102
+    integer, parameter :: ACTION_CAMERA_RESET  = 110
+    integer, parameter :: ACTION_FOCUS_BASE    = 120   ! 120..128 for Sun..Neptune
 
     ! Physics timestep: 1 hour = 3600 s
     real(real64), parameter :: PHYSICS_DT = 3600.0_real64
@@ -63,11 +96,17 @@ program solarsim
     type(velocity_verlet_t) :: verlet
     type(post_t)        :: post
     type(sun_t)         :: sun
+    type(rings_t), target :: rings
+    type(starfield_t)   :: sky
+    type(asteroids_t)   :: belt
+    type(menu_t)        :: menu
     real(real64)        :: accumulator, sim_time, last_frame_time, frame_dt
     real(real64)        :: alpha, fps_smooth
     integer             :: frame_count, step_count
     logical             :: running, auto_screenshot
-    character(len=32)   :: arg1
+    character(len=64)   :: arg1
+    character(len=128)  :: screenshot_path = "../screenshots/phase8_overview.png"
+    integer             :: screenshot_focus = -1
     integer             :: win_w, win_h
     real(real64)        :: au_val
 
@@ -75,17 +114,25 @@ program solarsim
 
     call log_init(LOG_DEBUG)
     call log_msg(LOG_INFO, "=== Solar System Simulation ===")
-    call log_msg(LOG_INFO, "Phase 4: Orbit camera, input, HUD")
+    call log_msg(LOG_INFO, "Phase 8: Starfield, asteroids, config, polish")
+
+    !-----------------------------------------------------------------------
+    ! Config first — window size / bloom / etc. come from config.toml.
+    !-----------------------------------------------------------------------
+    call config_init(cfg)
+    call config_toml_load(cfg, "config.toml")
+    call config_toml_log(cfg)
 
     !-----------------------------------------------------------------------
     ! Open window
     !-----------------------------------------------------------------------
-    if (.not. window_open("Solar System", 1600, 900)) then
+    if (.not. window_open("Solar System", cfg%window_width, cfg%window_height)) then
         call log_msg(LOG_ERROR, "Failed to open window — aborting")
         call log_shutdown()
         stop 1
     end if
-    win_w = 1600; win_h = 900
+    call window_set_vsync(cfg%vsync)
+    win_w = cfg%window_width; win_h = cfg%window_height
 
     !-----------------------------------------------------------------------
     ! Load physics
@@ -98,18 +145,25 @@ program solarsim
     !-----------------------------------------------------------------------
     ! Init renderer, camera, HUD, input, config
     !-----------------------------------------------------------------------
-    call renderer_init(renderer, win_w, win_h)
-    call config_init(cfg)
+    call renderer_init(renderer, win_w, win_h, sim%n_bodies())
+    call load_materials()
     au_val = AU
     call trails_init(trails, sim%n_bodies(), cfg%trail_length)
     call set_trail_colors()
     call seed_trails()
     call camera_init(cam, win_w, win_h)
+    cam%azimuth   = real(cfg%camera_azimuth,   c_float)
+    cam%elevation = real(cfg%camera_elevation, c_float)
+    cam%log_dist  = real(cfg%camera_log_dist,  c_float)
     call hud_text_init(hud)
+    call build_menu()
     call input_init(inp)
     call register_input_callbacks()
     call post_init(post, win_w, win_h, cfg%bloom_mips)
     call sun_init(sun)
+    call starfield_init(sky, cfg%starfield_count)
+    call asteroids_init(belt, cfg%asteroid_count, &
+                        cfg%asteroid_a_min, cfg%asteroid_a_max)
 
     allocate(bodies_prev(sim%n_bodies()))
     allocate(bodies_interp(sim%n_bodies()))
@@ -124,7 +178,46 @@ program solarsim
     if (command_argument_count() >= 1) then
         call get_command_argument(1, arg1)
         if (trim(arg1) == "--screenshot") auto_screenshot = .true.
+        if (trim(arg1) == "--screenshot-earth") then
+            auto_screenshot = .true.
+            screenshot_path = "../screenshots/phase8_earth.png"
+            screenshot_focus = 3
+            cfg%trails_visible = .false.
+            cam%log_dist = -0.30_c_float   ! ~0.5 AU
+            call focus_on_body(3)
+        end if
+        if (trim(arg1) == "--screenshot-earth-night") then
+            auto_screenshot = .true.
+            screenshot_path = "../screenshots/phase8_earth_night.png"
+            screenshot_focus = -3          ! magic: negative = night-side framing
+            cfg%trails_visible = .false.
+            ! Tune the HDR pipeline so faint city lights survive tonemap.
+            cfg%bloom_on       = .false.
+            cfg%exposure       = 1.0
+            cam%log_dist = -0.30_c_float
+            call focus_on_body(3)
+            call aim_camera_at_body(3, night_side=.true.)
+        end if
+        if (trim(arg1) == "--screenshot-saturn") then
+            auto_screenshot = .true.
+            screenshot_path = "../screenshots/phase8_saturn.png"
+            screenshot_focus = 6
+            cfg%trails_visible = .false.
+            cam%log_dist = 0.30_c_float    ! ~2 AU
+            call focus_on_body(6)
+        end if
+        if (trim(arg1) == "--screenshot") then
+            screenshot_path = "../screenshots/phase8_overview.png"
+        end if
     end if
+    if (screenshot_focus >= 0 .or. screenshot_focus < -1) then
+        ! Park the camera there — flush the smooth transition.
+        cam%focus = cam%focus_target
+        cam%focus_progress = 1.0_c_float
+        cfg%hud_visible = .false.
+    end if
+    ! Overview screenshot — also hide HUD + menu so the hero image stays clean.
+    if (auto_screenshot) cfg%hud_visible = .false.
     accumulator = 0.0_real64
     sim_time = 0.0_real64
     frame_count = 0
@@ -132,6 +225,7 @@ program solarsim
     last_frame_time = window_get_time()
 
     call log_msg(LOG_INFO, "Controls: 0-8 focus, SPACE pause, +/- time, R reset, H HUD")
+    call log_msg(LOG_INFO, "         T trails, B bloom, [/] exposure, F2 screenshot")
 
     do while (running)
         call input_update(inp)
@@ -158,6 +252,7 @@ program solarsim
         !-------------------------------------------------------------------
         ! Physics step (only if not paused)
         !-------------------------------------------------------------------
+        call perf_tic("physics")
         if (.not. cfg%paused) then
             accumulator = accumulator + frame_dt * cfg%time_scale
             step_count = 0
@@ -174,55 +269,112 @@ program solarsim
             if (alpha < 0.0_real64) alpha = 0.0_real64
             call interpolate_bodies(bodies_interp, bodies_prev, sim%bodies, alpha)
         end if
+        call perf_toc("physics")
 
         ! Push current positions to trail ring buffer (every frame)
+        call perf_tic("trails_push")
         call push_trails()
+        call perf_toc("trails_push")
+
+        !-------------------------------------------------------------------
+        ! Update menu (before camera so the menu can consume the mouse)
+        !-------------------------------------------------------------------
+        call sync_menu_from_cfg()
+        call menu_update(menu, &
+                         real(inp%mouse_x, c_float), real(inp%mouse_y, c_float), &
+                         inp%mouse_just_pressed%left, &
+                         inp%mouse_just_released%left, &
+                         inp%mouse%left)
+        call dispatch_menu_action()
 
         !-------------------------------------------------------------------
         ! Update camera
         !-------------------------------------------------------------------
         call camera_update(cam, real(frame_dt, c_float))
-        call camera_handle_input(cam, real(inp%mouse_dx, c_float), &
-                                 real(inp%mouse_dy, c_float), &
-                                 real(inp%scroll_dy, c_float), &
-                                 inp%mouse%left, inp%mouse%right, &
-                                 real(frame_dt, c_float))
+        if (.not. menu_mouse_captured(menu, &
+                  real(inp%mouse_x, c_float), real(inp%mouse_y, c_float))) then
+            call camera_handle_input(cam, real(inp%mouse_dx, c_float), &
+                                     real(inp%mouse_dy, c_float), &
+                                     real(inp%scroll_dy, c_float), &
+                                     inp%mouse%left, inp%mouse%right, &
+                                     real(frame_dt, c_float))
+        end if
 
         !-------------------------------------------------------------------
         ! Render — HDR scene into post FBO, then bloom + tonemap to screen
         !-------------------------------------------------------------------
         call maybe_resize_targets()
 
-        call post_begin_scene(post, 5.0_c_float / 255.0_c_float, &
-                              7.0_c_float / 255.0_c_float, &
-                              13.0_c_float / 255.0_c_float)
+        call perf_tic("scene_render")
+        ! Clear the HDR scene target to linear black — the gamma-encoded
+        ! dark-blue used in Phase 1 would get lifted to gray by the ACES +
+        ! sRGB tonemap. Let the starfield + bloom provide all non-black pixels.
+        call post_begin_scene(post, 0.0_c_float, 0.0_c_float, 0.0_c_float)
+
+        ! Starfield first — depth write off, so everything else occludes it.
+        call perf_tic("starfield")
+        call starfield_render(sky, cam, real(window_get_time(), c_float), &
+                              real(cfg%starfield_intensity, c_float))
+        call perf_toc("starfield")
+
         renderer%camera = cam
-        call renderer_render(renderer, bodies_interp)
-        call sun_render(sun, bodies_interp(1), cam, &
-                        real(window_get_time(), c_float), &
-                        real(cfg%sun_emissive_mul, c_float))
+        block
+            real(c_float) :: sun_pos(3)
+            sun_pos(1) = real(bodies_interp(1)%position%x / au_val, c_float)
+            sun_pos(2) = real(bodies_interp(1)%position%y / au_val, c_float)
+            sun_pos(3) = real(bodies_interp(1)%position%z / au_val, c_float)
+            call perf_tic("planets")
+            call renderer_render(renderer, bodies_interp, sun_pos)
+            call perf_toc("planets")
+            call perf_tic("asteroids")
+            call asteroids_render(belt, cam, sun_pos, sim_time)
+            call perf_toc("asteroids")
+        end block
+        if (screenshot_focus == -1) then
+            ! Only render the huge procedural Sun for the default overview.
+            ! Close-up day shots (>= 0) and night-side shots (< -1) skip it.
+            call sun_render(sun, bodies_interp(1), cam, &
+                            real(window_get_time(), c_float), &
+                            real(cfg%sun_emissive_mul, c_float))
+        end if
         if (cfg%trails_visible) then
+            call perf_tic("trails_draw")
             call trails_render(trails, cam)
+            call perf_toc("trails_draw")
         end if
         call post_end_scene(post)
+        call perf_toc("scene_render")
 
+        call perf_tic("bloom_tonemap")
         call post_apply_bloom_and_tonemap(post, cfg%bloom_on, &
             real(cfg%bloom_threshold, c_float), &
             real(cfg%bloom_intensity, c_float), &
             real(cfg%exposure, c_float))
+        call perf_toc("bloom_tonemap")
 
         !-------------------------------------------------------------------
-        ! HUD drawn over tonemapped output in SDR
+        ! HUD and menu drawn over tonemapped output in SDR. Menu always
+        ! visible; HUD lines depend on cfg%hud_visible.
         !-------------------------------------------------------------------
-        if (cfg%hud_visible) then
-            call render_hud()
-        end if
+        call render_hud_and_menu()
 
         if (inp%key_just_pressed(KEY_F12)) then
             call take_screenshot()
         end if
+        if (inp%key_just_pressed(KEY_F2)) then
+            call take_screenshot_timestamped()
+        end if
 
         frame_count = frame_count + 1
+        ! Only Earth uses the sun-perpendicular "vertical terminator" framing;
+        ! other planets look nicer with the default orbit camera (above-ecliptic
+        ! 3/4 view so e.g. Saturn's rings are visible).
+        if (auto_screenshot .and. screenshot_focus == 3) then
+            call aim_camera_at_body(screenshot_focus, night_side=.false.)
+        end if
+        if (auto_screenshot .and. screenshot_focus == -3) then
+            call aim_camera_at_body(-screenshot_focus, night_side=.true.)
+        end if
         if (auto_screenshot .and. frame_count == 180) then
             call take_screenshot()
             running = .false.
@@ -235,8 +387,13 @@ program solarsim
     ! Clean shutdown
     !-----------------------------------------------------------------------
     call log_msg(LOG_INFO, "Shutting down...")
+    call perf_report()
+    call asteroids_shutdown(belt)
+    call starfield_shutdown(sky)
+    call rings_destroy(rings)
     call sun_shutdown(sun)
     call post_shutdown(post)
+    call menu_shutdown(menu)
     call hud_text_shutdown(hud)
     call input_shutdown()
     call renderer_shutdown(renderer)
@@ -354,64 +511,77 @@ contains
     end subroutine focus_on_body
 
     !=====================================================================
-    ! Render HUD overlay
+    ! Render HUD overlay + top-bar menu. The menu always shows; the HUD
+    ! lines (FPS, date, etc.) gate on cfg%hud_visible. HUD text sits
+    ! below the menu bar so it doesn't clip under open panels.
     !=====================================================================
-    subroutine render_hud()
+    subroutine render_hud_and_menu()
         type(sim_date_t) :: sim_date
         real(real64) :: time_scale_days
         character(len=32) :: ts_str, fps_str, focus_str, pause_str
+        real(c_float) :: y0
 
         call hud_text_clear(hud)
 
-        ! FPS
-        write(fps_str, "(A,F6.1)") "FPS: ", fps_smooth
-        call hud_text_draw(hud, 10.0_c_float, 10.0_c_float, trim(fps_str), &
-                           1.0_c_float, 1.0_c_float, 1.0_c_float)
+        if (cfg%hud_visible) then
+            y0 = MENU_BAR_H + 8.0_c_float
 
-        ! Simulated date
-        call j2000_to_date(sim_time, sim_date)
-        write(ts_str, "(I4.4,'-',I2.2,'-',I2.2,' ',I2.2,':',I2.2,':',I2.2)") &
-            sim_date%year, sim_date%month, sim_date%day, &
-            sim_date%hour, sim_date%minute, int(sim_date%second)
-        call hud_text_draw(hud, 10.0_c_float, 25.0_c_float, "Date: " // trim(ts_str), &
-                           1.0_c_float, 1.0_c_float, 1.0_c_float)
+            ! FPS
+            write(fps_str, "(A,F6.1)") "FPS: ", fps_smooth
+            call hud_text_draw(hud, 10.0_c_float, y0, trim(fps_str), &
+                               1.0_c_float, 1.0_c_float, 1.0_c_float)
 
-        ! Time scale
-        time_scale_days = cfg%time_scale / 86400.0_real64
-        if (time_scale_days < 1.0_real64) then
-            write(ts_str, "(F0.1,' s/s')") cfg%time_scale
-        else if (time_scale_days < 365.25_real64) then
-            write(ts_str, "(F0.1,' day/s')") time_scale_days
-        else
-            write(ts_str, "(F0.1,' yr/s')") time_scale_days / 365.25_real64
+            ! Simulated date
+            call j2000_to_date(sim_time, sim_date)
+            write(ts_str, "(I4.4,'-',I2.2,'-',I2.2,' ',I2.2,':',I2.2,':',I2.2)") &
+                sim_date%year, sim_date%month, sim_date%day, &
+                sim_date%hour, sim_date%minute, int(sim_date%second)
+            call hud_text_draw(hud, 10.0_c_float, y0 + 15.0_c_float, &
+                               "Date: " // trim(ts_str), &
+                               1.0_c_float, 1.0_c_float, 1.0_c_float)
+
+            ! Time scale
+            time_scale_days = cfg%time_scale / 86400.0_real64
+            if (time_scale_days < 1.0_real64) then
+                write(ts_str, "(F0.1,' s/s')") cfg%time_scale
+            else if (time_scale_days < 365.25_real64) then
+                write(ts_str, "(F0.1,' day/s')") time_scale_days
+            else
+                write(ts_str, "(F0.1,' yr/s')") time_scale_days / 365.25_real64
+            end if
+            call hud_text_draw(hud, 10.0_c_float, y0 + 30.0_c_float, &
+                               "Time: " // trim(ts_str), &
+                               1.0_c_float, 1.0_c_float, 1.0_c_float)
+
+            ! Focus
+            focus_str = "Focus: " // trim(cfg%focus_names(cfg%focus_index+1))
+            call hud_text_draw(hud, 10.0_c_float, y0 + 45.0_c_float, focus_str, &
+                               1.0_c_float, 1.0_c_float, 1.0_c_float)
+
+            ! Paused indicator
+            if (cfg%paused) then
+                pause_str = "[PAUSED]"
+                call hud_text_draw(hud, 10.0_c_float, y0 + 60.0_c_float, pause_str, &
+                                   1.0_c_float, 0.3_c_float, 0.3_c_float)
+            end if
+
+            ! Exposure / bloom readout
+            if (cfg%bloom_on) then
+                write(ts_str, "(A,F4.2)") "Exposure: ", cfg%exposure
+                call hud_text_draw(hud, 10.0_c_float, y0 + 75.0_c_float, trim(ts_str), &
+                                   1.0_c_float, 1.0_c_float, 0.6_c_float)
+            else
+                call hud_text_draw(hud, 10.0_c_float, y0 + 75.0_c_float, "Bloom: OFF", &
+                                   0.7_c_float, 0.7_c_float, 0.7_c_float)
+            end if
         end if
-        call hud_text_draw(hud, 10.0_c_float, 40.0_c_float, "Time: " // trim(ts_str), &
-                           1.0_c_float, 1.0_c_float, 1.0_c_float)
 
-        ! Focus
-        focus_str = "Focus: " // trim(cfg%focus_names(cfg%focus_index+1))
-        call hud_text_draw(hud, 10.0_c_float, 55.0_c_float, focus_str, &
-                           1.0_c_float, 1.0_c_float, 1.0_c_float)
+        ! Menu bar + any open drop-down — shares the HUD-visible flag so
+        ! screenshots (and the H keybind) can clear the whole overlay.
+        if (cfg%hud_visible) call menu_render(menu, hud, win_w)
 
-        ! Paused indicator
-        if (cfg%paused) then
-            pause_str = "[PAUSED]"
-            call hud_text_draw(hud, 10.0_c_float, 70.0_c_float, pause_str, &
-                               1.0_c_float, 0.3_c_float, 0.3_c_float)
-        end if
-
-        ! Exposure (only shown when bloom is on)
-        if (cfg%bloom_on) then
-            write(ts_str, "(A,F4.2)") "Exposure: ", cfg%exposure
-            call hud_text_draw(hud, 10.0_c_float, 85.0_c_float, trim(ts_str), &
-                               1.0_c_float, 1.0_c_float, 0.6_c_float)
-        else
-            call hud_text_draw(hud, 10.0_c_float, 85.0_c_float, "Bloom: OFF", &
-                               0.7_c_float, 0.7_c_float, 0.7_c_float)
-        end if
-
-        call hud_text_render(hud)
-    end subroutine render_hud
+        call hud_text_render(hud, win_w, win_h)
+    end subroutine render_hud_and_menu
 
     !=====================================================================
     ! Interpolate body positions
@@ -449,6 +619,88 @@ contains
     end subroutine maybe_resize_targets
 
     !=====================================================================
+    ! Place the orbit camera on a chosen side of body `idx` (0-based index
+    ! where 0=Sun, 3=Earth, …), pointing at it with a small elevation bias.
+    !
+    ! night_side = .false. → camera on the sunward side (sees lit face).
+    ! night_side = .true.  → camera on the anti-sun side (sees dark face,
+    !                         with Earth's night-lights texture visible).
+    !=====================================================================
+    subroutine aim_camera_at_body(idx, night_side)
+        integer, intent(in) :: idx
+        logical, intent(in) :: night_side
+        real(c_float) :: p(3), s(3), sun_dir(3), dlen, dist
+        real(c_float) :: view_up(3), forward(3), eye_dir(3)
+        integer :: body_idx
+        au_val = AU
+        body_idx = idx + 1
+        p(1) = real(sim%bodies(body_idx)%position%x / au_val, c_float)
+        p(2) = real(sim%bodies(body_idx)%position%y / au_val, c_float)
+        p(3) = real(sim%bodies(body_idx)%position%z / au_val, c_float)
+        s(1) = real(sim%bodies(1)%position%x / au_val, c_float)
+        s(2) = real(sim%bodies(1)%position%y / au_val, c_float)
+        s(3) = real(sim%bodies(1)%position%z / au_val, c_float)
+
+        cam%focus = p
+        cam%focus_target = p
+        cam%focus_progress = 1.0_c_float
+
+        if (.not. night_side) then
+            ! Day shot — camera on sun side, view_up aligned with ecliptic
+            ! north (+Z) so Earth's tilted model renders with north up and
+            ! the terminator runs vertically (day half on right of frame).
+            sun_dir = s - p
+            dlen = sqrt(sun_dir(1)**2 + sun_dir(2)**2 + sun_dir(3)**2)
+            if (dlen < 1.0e-6_c_float) return
+            sun_dir = sun_dir / dlen
+            view_up = [0.0_c_float, 0.0_c_float, 1.0_c_float]
+            forward(1) = view_up(2)*sun_dir(3) - view_up(3)*sun_dir(2)
+            forward(2) = view_up(3)*sun_dir(1) - view_up(1)*sun_dir(3)
+            forward(3) = view_up(1)*sun_dir(2) - view_up(2)*sun_dir(1)
+            dlen = sqrt(forward(1)**2 + forward(2)**2 + forward(3)**2)
+            if (dlen < 1.0e-6_c_float) return
+            forward = -forward / dlen     ! flip so sun is to the LEFT
+            eye_dir = -forward
+            dist = 10.0_c_float ** cam%log_dist
+            cam%eye = p + dist * eye_dir
+            cam%view_up = view_up
+            cam%eye_override = .true.
+            return
+        end if
+
+        ! Night shot — place camera so the sun-to-planet line lies along
+        ! the camera's RIGHT axis. That gives a vertical terminator (day
+        ! half on one side, night half on the other) instead of the
+        ! top-lit / bottom-dark look the ecliptic-up camera produces when
+        ! Earth sits near +Y at J2000.
+        sun_dir = s - p                                  ! planet → sun
+        dlen = sqrt(sun_dir(1)**2 + sun_dir(2)**2 + sun_dir(3)**2)
+        if (dlen < 1.0e-6_c_float) return
+        sun_dir = sun_dir / dlen
+
+        ! view_up = world +Z — perpendicular to the ecliptic, and therefore
+        ! perpendicular to sun_dir (which lies in the ecliptic for planets
+        ! with small z). Gives ecliptic-north as the camera's up.
+        view_up = [0.0_c_float, 0.0_c_float, 1.0_c_float]
+
+        ! forward = cross(view_up, sun_dir) puts sun_dir along +right, so
+        ! the lit half is on the right of frame and the night half on the
+        ! left — the classic "half Earth" pose.
+        forward(1) = view_up(2)*sun_dir(3) - view_up(3)*sun_dir(2)
+        forward(2) = view_up(3)*sun_dir(1) - view_up(1)*sun_dir(3)
+        forward(3) = view_up(1)*sun_dir(2) - view_up(2)*sun_dir(1)
+        dlen = sqrt(forward(1)**2 + forward(2)**2 + forward(3)**2)
+        if (dlen < 1.0e-6_c_float) return
+        forward = forward / dlen
+
+        eye_dir = -forward
+        dist = 10.0_c_float ** cam%log_dist
+        cam%eye = p + dist * eye_dir
+        cam%view_up = view_up
+        cam%eye_override = .true.
+    end subroutine aim_camera_at_body
+
+    !=====================================================================
     ! F12 — read back default framebuffer and write screenshots/phase6.png
     !=====================================================================
     subroutine take_screenshot()
@@ -461,20 +713,326 @@ contains
         allocate(pixels(3 * w * h))
         call gl_read_pixels_rgb(0_c_int, 0_c_int, w, h, c_loc(pixels(1)))
 
-        rc = ss_write_png_c("screenshots/phase6.png", w, h, c_loc(pixels(1)))
+        rc = ss_write_png_c(trim(screenshot_path) // char(0), w, h, c_loc(pixels(1)))
         if (rc == 1_c_int) then
-            call log_msg(LOG_INFO, "Screenshot: screenshots/phase6.png")
+            call log_msg(LOG_INFO, "Screenshot: " // trim(screenshot_path))
         else
             call log_msg(LOG_ERROR, "Screenshot failed")
         end if
         deallocate(pixels)
     end subroutine take_screenshot
 
+    !=====================================================================
+    ! F2 — timestamped PNG of the tonemapped backbuffer into screenshots/.
+    !=====================================================================
+    subroutine take_screenshot_timestamped()
+        use, intrinsic :: iso_c_binding, only: c_loc, c_signed_char
+        integer(c_int) :: w, h, rc
+        integer(c_signed_char), allocatable, target :: pixels(:)
+        integer :: dt(8)
+        character(len=160) :: path
+
+        call date_and_time(values=dt)
+        write(path, "('screenshots/solarsim_',I4.4,I2.2,I2.2,'_',I2.2,I2.2,I2.2,'.png')") &
+            dt(1), dt(2), dt(3), dt(5), dt(6), dt(7)
+
+        w = int(win_w, c_int)
+        h = int(win_h, c_int)
+        allocate(pixels(3 * w * h))
+        call gl_read_pixels_rgb(0_c_int, 0_c_int, w, h, c_loc(pixels(1)))
+
+        rc = ss_write_png_c(trim(path) // char(0), w, h, c_loc(pixels(1)))
+        if (rc == 1_c_int) then
+            call log_msg(LOG_INFO, "Screenshot: " // trim(path))
+        else
+            call log_msg(LOG_ERROR, "Screenshot failed: " // trim(path))
+        end if
+        deallocate(pixels)
+    end subroutine take_screenshot_timestamped
+
+    !=====================================================================
+    ! Load planet textures and build materials.
+    ! Body indices: 1=Sun, 2=Mercury, 3=Venus, 4=Earth, 5=Mars,
+    !               6=Jupiter, 7=Saturn, 8=Uranus, 9=Neptune.
+    !=====================================================================
+    subroutine load_materials()
+        type(material_t) :: m
+        type(material_t) :: blank
+
+        ! Mercury (generic, rocky — normal map absent, low spec)
+        m = blank
+        m%kind = MATERIAL_GENERIC
+        m%shininess = 8.0_c_float
+        m%spec_scale = 0.02_c_float
+        call texture_load(m%albedo, "assets/planets/2k_mercury.jpg")
+        call renderer_set_material(renderer, 2, m)
+
+        m = blank
+        ! Venus (thick atmosphere — strong warm rim, no normal)
+        m%kind = MATERIAL_GAS_GIANT
+        m%shininess = 4.0_c_float
+        m%spec_scale = 0.0_c_float
+        m%rim_power = 3.0_c_float
+        m%rim_color = [0.95_c_float, 0.75_c_float, 0.45_c_float]
+        call texture_load(m%albedo, "assets/planets/2k_venus_atmosphere.jpg")
+        call renderer_set_material(renderer, 3, m)
+
+        m = blank
+        ! Earth (day, night, ocean spec, normal, rim)
+        ! rim_power=6 gives a tight cyan halo; at rim_power=3 the glow
+        ! swallowed the disc (see phase7_earth.png and early phase8 shots).
+        m%kind = MATERIAL_EARTH
+        m%shininess = 48.0_c_float
+        m%spec_scale = 0.35_c_float
+        m%rim_power = 6.0_c_float
+        m%rim_color = [0.18_c_float, 0.30_c_float, 0.55_c_float]
+        call texture_load(m%albedo,   "assets/planets/2k_earth_daymap.jpg")
+        if (cfg%load_earth_normal) then
+            call texture_load(m%normal, "assets/planets/2k_earth_normal_map.png", srgb=.false.)
+        end if
+        if (cfg%load_earth_night) then
+            call texture_load(m%night, "assets/planets/2k_earth_nightmap.jpg")
+        end if
+        if (cfg%load_earth_specular) then
+            call texture_load(m%specular, "assets/planets/2k_earth_specular_map.png", srgb=.false.)
+        else
+            m%spec_scale = 0.0_c_float
+        end if
+        call texture_load(m%clouds, "assets/planets/2k_earth_clouds.jpg")
+        call renderer_set_material(renderer, 4, m)
+
+        m = blank
+        ! Mars
+        m%kind = MATERIAL_GENERIC
+        m%shininess = 12.0_c_float
+        m%spec_scale = 0.03_c_float
+        call texture_load(m%albedo, "assets/planets/2k_mars.jpg")
+        call renderer_set_material(renderer, 5, m)
+
+        m = blank
+        ! Jupiter (gas giant with subtle rim)
+        m%kind = MATERIAL_GAS_GIANT
+        m%shininess = 4.0_c_float
+        m%spec_scale = 0.0_c_float
+        m%rim_power = 4.0_c_float
+        m%rim_color = [0.9_c_float, 0.75_c_float, 0.55_c_float]
+        call texture_load(m%albedo, "assets/planets/2k_jupiter.jpg")
+        call renderer_set_material(renderer, 6, m)
+
+        m = blank
+        ! Saturn
+        m%kind = MATERIAL_GAS_GIANT
+        m%rim_power = 4.0_c_float
+        m%rim_color = [0.95_c_float, 0.85_c_float, 0.60_c_float]
+        call texture_load(m%albedo, "assets/planets/2k_saturn.jpg")
+        call renderer_set_material(renderer, 7, m)
+
+        m = blank
+        ! Uranus
+        m%kind = MATERIAL_GAS_GIANT
+        m%rim_power = 3.5_c_float
+        m%rim_color = [0.55_c_float, 0.85_c_float, 0.95_c_float]
+        call texture_load(m%albedo, "assets/planets/2k_uranus.jpg")
+        call renderer_set_material(renderer, 8, m)
+
+        m = blank
+        ! Neptune
+        m%kind = MATERIAL_GAS_GIANT
+        m%rim_power = 3.5_c_float
+        m%rim_color = [0.35_c_float, 0.55_c_float, 0.95_c_float]
+        call texture_load(m%albedo, "assets/planets/2k_neptune.jpg")
+        call renderer_set_material(renderer, 9, m)
+
+        ! Saturn's rings
+        if (cfg%load_saturn_rings) then
+            call rings_init(rings, "assets/planets/2k_saturn_ring_alpha.png", &
+                            1.25_c_float, 2.20_c_float, 128)
+            call renderer_set_rings(renderer, rings, 7)
+        end if
+    end subroutine load_materials
+
     pure function itoa(i) result(s)
         integer, intent(in) :: i
         character(len=12) :: s
         write(s, "(I0)") i
     end function itoa
+
+    !=====================================================================
+    ! Populate the top-bar menu. Four drop-downs: File, View, Camera,
+    ! Render. Field and action enum values come from the top of this
+    ! program unit; menu_mod dispatches them back to us via
+    ! menu_pop_action.
+    !=====================================================================
+    subroutine build_menu()
+        use config_mod, only: TIME_SCALE_MIN, TIME_SCALE_MAX, &
+                              EXPOSURE_MIN, EXPOSURE_MAX
+        integer :: d_file, d_view, d_camera, d_render, i
+        type(menu_item_t) :: it
+
+        call menu_init(menu, 4)
+
+        !-- File -----------------------------------------------------
+        call menu_add_dropdown(menu, "File", 5, d_file)
+        it%kind = ITEM_BUTTON; it%label = "Screenshot (F12)"
+        it%action_id = ACTION_SCREENSHOT
+        call menu_add_item(menu, d_file, it)
+        it%kind = ITEM_BUTTON; it%label = "Save Timestamped (F2)"
+        it%action_id = ACTION_SCREENSHOT_TS
+        call menu_add_item(menu, d_file, it)
+        it%kind = ITEM_SEPARATOR; it%label = ""; it%action_id = 0
+        call menu_add_item(menu, d_file, it)
+        it%kind = ITEM_BUTTON; it%label = "Quit"
+        it%action_id = ACTION_QUIT
+        call menu_add_item(menu, d_file, it)
+
+        !-- View -----------------------------------------------------
+        call menu_add_dropdown(menu, "View", 6, d_view)
+        it = blank_item()
+        it%kind = ITEM_TOGGLE; it%label = "Show HUD"
+        it%field_id = FIELD_HUD; it%bool_value = cfg%hud_visible
+        call menu_add_item(menu, d_view, it)
+        it%label = "Show Orbit Trails"
+        it%field_id = FIELD_TRAILS; it%bool_value = cfg%trails_visible
+        call menu_add_item(menu, d_view, it)
+        it%label = "Bloom"
+        it%field_id = FIELD_BLOOM; it%bool_value = cfg%bloom_on
+        call menu_add_item(menu, d_view, it)
+        it%label = "V-Sync"
+        it%field_id = FIELD_VSYNC; it%bool_value = cfg%vsync
+        call menu_add_item(menu, d_view, it)
+        it%label = "Pause Simulation"
+        it%field_id = FIELD_PAUSED; it%bool_value = cfg%paused
+        call menu_add_item(menu, d_view, it)
+
+        !-- Camera ---------------------------------------------------
+        call menu_add_dropdown(menu, "Camera", 12, d_camera)
+        do i = 0, 8
+            it = blank_item()
+            it%kind = ITEM_BUTTON
+            it%label = "Focus: " // trim(cfg%focus_names(i+1))
+            it%action_id = ACTION_FOCUS_BASE + i
+            call menu_add_item(menu, d_camera, it)
+        end do
+        it = blank_item(); it%kind = ITEM_SEPARATOR
+        call menu_add_item(menu, d_camera, it)
+        it = blank_item()
+        it%kind = ITEM_BUTTON; it%label = "Reset View"
+        it%action_id = ACTION_CAMERA_RESET
+        call menu_add_item(menu, d_camera, it)
+
+        !-- Render ---------------------------------------------------
+        call menu_add_dropdown(menu, "Render", 4, d_render)
+        it = blank_item()
+        it%kind = ITEM_SLIDER; it%label = "Exposure"
+        it%field_id = FIELD_EXPOSURE
+        it%slider_min = real(EXPOSURE_MIN, c_float)
+        it%slider_max = real(EXPOSURE_MAX, c_float)
+        it%value = real(cfg%exposure, c_float)
+        call menu_add_item(menu, d_render, it)
+        it = blank_item()
+        it%kind = ITEM_SLIDER; it%label = "Bloom Amount"
+        it%field_id = FIELD_BLOOM_INT
+        it%slider_min = 0.0_c_float
+        it%slider_max = 2.0_c_float
+        it%value = real(cfg%bloom_intensity, c_float)
+        call menu_add_item(menu, d_render, it)
+        it = blank_item()
+        it%kind = ITEM_SLIDER; it%label = "Time (log10 s/s)"
+        it%field_id = FIELD_TIMESCALE_LOG
+        it%slider_min = real(log10(TIME_SCALE_MIN), c_float)
+        it%slider_max = real(log10(TIME_SCALE_MAX), c_float)
+        it%value = real(log10(cfg%time_scale), c_float)
+        call menu_add_item(menu, d_render, it)
+    end subroutine build_menu
+
+    pure function blank_item() result(it)
+        type(menu_item_t) :: it
+        it%kind       = 0
+        it%label      = ""
+        it%field_id   = 0
+        it%action_id  = 0
+        it%value      = 0.0_c_float
+        it%bool_value = .false.
+        it%slider_min = 0.0_c_float
+        it%slider_max = 1.0_c_float
+        it%is_log     = .false.
+    end function blank_item
+
+    !=====================================================================
+    ! Sync cfg → menu so keyboard shortcuts (SPACE, H, B, T, +/-)
+    ! keep the menu's displayed state in sync.
+    !=====================================================================
+    subroutine sync_menu_from_cfg()
+        call menu_set_toggle(menu, FIELD_HUD,    cfg%hud_visible)
+        call menu_set_toggle(menu, FIELD_TRAILS, cfg%trails_visible)
+        call menu_set_toggle(menu, FIELD_BLOOM,  cfg%bloom_on)
+        call menu_set_toggle(menu, FIELD_VSYNC,  cfg%vsync)
+        call menu_set_toggle(menu, FIELD_PAUSED, cfg%paused)
+        call menu_set_slider(menu, FIELD_EXPOSURE,      real(cfg%exposure,        c_float))
+        call menu_set_slider(menu, FIELD_BLOOM_INT,     real(cfg%bloom_intensity, c_float))
+        call menu_set_slider(menu, FIELD_TIMESCALE_LOG, real(log10(cfg%time_scale), c_float))
+    end subroutine sync_menu_from_cfg
+
+    !=====================================================================
+    ! Pull a fresh event code off the menu and mutate cfg / app state.
+    !=====================================================================
+    subroutine dispatch_menu_action()
+        integer :: act
+        real(c_float) :: v
+        logical :: b
+        act = menu_pop_action(menu)
+        if (act == 0) return
+
+        if (act < 0) then
+            ! Toggle events — menu flipped the bool and sent -field_id
+            select case (-act)
+            case (FIELD_HUD)
+                cfg%hud_visible = menu_get_toggle(menu, FIELD_HUD)
+            case (FIELD_TRAILS)
+                cfg%trails_visible = menu_get_toggle(menu, FIELD_TRAILS)
+            case (FIELD_BLOOM)
+                cfg%bloom_on = menu_get_toggle(menu, FIELD_BLOOM)
+            case (FIELD_VSYNC)
+                b = menu_get_toggle(menu, FIELD_VSYNC)
+                cfg%vsync = b
+                call window_set_vsync(b)
+            case (FIELD_PAUSED)
+                cfg%paused = menu_get_toggle(menu, FIELD_PAUSED)
+            end select
+            return
+        end if
+
+        if (act < 100) then
+            ! Slider events
+            select case (act)
+            case (FIELD_EXPOSURE)
+                cfg%exposure = menu_get_slider(menu, FIELD_EXPOSURE)
+            case (FIELD_BLOOM_INT)
+                cfg%bloom_intensity = menu_get_slider(menu, FIELD_BLOOM_INT)
+            case (FIELD_TIMESCALE_LOG)
+                v = menu_get_slider(menu, FIELD_TIMESCALE_LOG)
+                call config_set_time_scale(cfg, 10.0_real64 ** real(v, real64))
+            end select
+            return
+        end if
+
+        ! Buttons (action_id >= 100)
+        select case (act)
+        case (ACTION_SCREENSHOT)
+            call take_screenshot_timestamped()
+        case (ACTION_SCREENSHOT_TS)
+            call take_screenshot_timestamped()
+        case (ACTION_QUIT)
+            running = .false.
+        case (ACTION_CAMERA_RESET)
+            call camera_reset(cam)
+        case default
+            if (act >= ACTION_FOCUS_BASE .and. act <= ACTION_FOCUS_BASE + 8) then
+                cfg%focus_index = act - ACTION_FOCUS_BASE
+                call focus_on_body(cfg%focus_index)
+            end if
+        end select
+    end subroutine dispatch_menu_action
 
     !=====================================================================
     ! Seed trail buffers with current body positions

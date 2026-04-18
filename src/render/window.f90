@@ -7,6 +7,7 @@ module window
     use gl_bindings, only: GLFWwindow, &
         glfw_init, glfw_terminate, glfw_window_hint, glfw_create_window, &
         glfw_destroy_window, glfw_make_context_current, glfw_swap_buffers, &
+        glfw_swap_interval, &
         glfw_window_should_close, glfw_poll_events, glfw_get_time, &
         glfw_get_framebuffer_size, &
         glfw_set_key_callback, glfw_set_framebuffer_size_callback, &
@@ -24,7 +25,7 @@ module window
     public :: WindowHandle, window_open, window_close, &
               window_should_close, window_swap_buffers, &
               window_clear, window_poll_events, window_get_time, &
-              window_get_size, window_get_glfw_window, &
+              window_get_size, window_get_glfw_window, window_set_vsync, &
               window_set_key_callback, window_set_mouse_button_callback, &
               window_set_cursor_pos_callback, window_set_scroll_callback
 
@@ -99,6 +100,12 @@ contains
             return
         end if
         call log_msg(LOG_INFO, "GLAD loaded OpenGL 4.1 Core functions")
+        block
+            use gl_bindings, only: gl_get_string, GL_RENDERER, GL_VERSION, GL_VENDOR
+            call log_msg(LOG_INFO, "GL_VENDOR:   " // trim(gl_get_string(GL_VENDOR)))
+            call log_msg(LOG_INFO, "GL_RENDERER: " // trim(gl_get_string(GL_RENDERER)))
+            call log_msg(LOG_INFO, "GL_VERSION:  " // trim(gl_get_string(GL_VERSION)))
+        end block
 
         ! Set callbacks
         call glfw_set_key_callback(g_window, key_callback)
@@ -139,6 +146,20 @@ contains
     subroutine window_swap_buffers()
         call glfw_swap_buffers(g_window)
     end subroutine window_swap_buffers
+
+    !=====================================================================
+    ! window_set_vsync — enable (1) or disable (0) swap interval
+    !=====================================================================
+    subroutine window_set_vsync(enabled)
+        logical, intent(in) :: enabled
+        if (enabled) then
+            call glfw_swap_interval(1)
+            call log_msg(LOG_INFO, "VSync: ON")
+        else
+            call glfw_swap_interval(0)
+            call log_msg(LOG_INFO, "VSync: OFF")
+        end if
+    end subroutine window_set_vsync
 
     !=====================================================================
     ! window_clear — clear color + depth buffers

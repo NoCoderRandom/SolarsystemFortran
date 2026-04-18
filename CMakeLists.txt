@@ -34,6 +34,12 @@ set(GLAD_SOURCES    external/glad/src/glad.c)
 set(GLAD_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include)
 
 # ---------------------------------------------------------------------------
+# stb_image (single-header, vendored)
+# ---------------------------------------------------------------------------
+set(STB_SOURCES      external/stb/stb_impl.c)
+set(STB_INCLUDE_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/external/stb)
+
+# ---------------------------------------------------------------------------
 # Shared sources (used by both solarsim and test_physics)
 # ---------------------------------------------------------------------------
 set(CORE_SOURCES
@@ -42,6 +48,8 @@ set(CORE_SOURCES
     src/core/vector3d.f90
     src/core/input.f90
     src/core/config.f90
+    src/core/config_toml.f90
+    src/core/perf.f90
     src/core/date_utils.f90
 )
 
@@ -65,12 +73,24 @@ set(RENDER_SOURCES
     src/render/shader.f90
     src/render/framebuffer.f90
     src/render/camera.f90
+    src/render/texture.f90
+    src/render/material.f90
+    src/render/rings.f90
     src/render/renderer.f90
     src/render/window.f90
     src/render/hud_text.f90
     src/render/trails.f90
     src/render/sun.f90
+    src/render/starfield.f90
+    src/render/asteroids.f90
     src/render/post.f90
+)
+
+# ---------------------------------------------------------------------------
+# UI sources (top-bar menu + dropdowns)
+# ---------------------------------------------------------------------------
+set(UI_SOURCES
+    src/ui/menu.f90
 )
 
 # ---------------------------------------------------------------------------
@@ -81,11 +101,14 @@ add_executable(solarsim
     ${CORE_SOURCES}
     ${PHYSICS_SOURCES}
     ${RENDER_SOURCES}
+    ${UI_SOURCES}
     ${GLAD_SOURCES}
+    ${STB_SOURCES}
 )
 
 target_include_directories(solarsim PRIVATE
     ${GLAD_INCLUDE_DIR}
+    ${STB_INCLUDE_DIR}
 )
 
 target_link_libraries(solarsim PRIVATE
@@ -130,14 +153,30 @@ set_target_properties(test_date_utils PROPERTIES
 )
 
 # ---------------------------------------------------------------------------
-# Copy assets/shaders into build tree for runtime loading
+# Copy shaders into build tree on every build so edits take effect immediately
 # ---------------------------------------------------------------------------
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
+file(GLOB_RECURSE _SHADER_FILES
+     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.vert
+     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.frag
 )
+add_custom_target(copy_shaders ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+            ${CMAKE_CURRENT_BINARY_DIR}/shaders
+    DEPENDS ${_SHADER_FILES}
+    COMMENT "Syncing shaders → build/shaders/"
+)
+add_dependencies(solarsim copy_shaders)
+
+# ---------------------------------------------------------------------------
+# Copy assets into build tree (configure-time only — large, rarely changes)
+# ---------------------------------------------------------------------------
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+# Ensure screenshots/ exists in the build tree (F2 writes here at runtime).
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/screenshots)
 
 # ---------------------------------------------------------------------------
 # CTest

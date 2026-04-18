@@ -90,7 +90,7 @@ contains
             304.88003809_real64]   ! Neptune
 
         ! RGB colors (0..1) for later rendering
-        real(real32), parameter :: body_colors(9, 3) = reshape([ &
+        real(real32), parameter :: body_colors(3, 9) = reshape([ &
             1.0_real32, 0.9_real32, 0.1_real32, &  ! Sun (yellow)
             0.7_real32, 0.7_real32, 0.7_real32, &  ! Mercury (gray)
             0.9_real32, 0.8_real32, 0.6_real32, &  ! Venus (tan)
@@ -100,7 +100,7 @@ contains
             0.9_real32, 0.8_real32, 0.6_real32, &  ! Saturn (tan)
             0.6_real32, 0.8_real32, 0.9_real32, &  ! Uranus (cyan)
             0.3_real32, 0.4_real32, 0.8_real32], &  ! Neptune (blue)
-            [9, 3])
+            [3, 9])
 
         integer :: i, n
         real(real64) :: L_rad, a_m, v_circ, theta_sin, theta_cos
@@ -117,7 +117,7 @@ contains
             bodies(i)%position = zero_vec3
             bodies(i)%velocity = zero_vec3
             bodies(i)%acceleration = zero_vec3
-            bodies(i)%color = body_colors(i, :)
+            bodies(i)%color = body_colors(:, i)
         end do
 
         ! Set positions and velocities for planets (i >= 2)

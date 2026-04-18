@@ -10,7 +10,7 @@ module shader_mod
         gl_create_program, gl_attach_shader, gl_link_program, &
         gl_delete_program, gl_use_program, &
         gl_get_uniform_location, gl_uniform_matrix4fv, gl_uniform3f, &
-        gl_uniform1f, gl_uniform1i, &
+        gl_uniform2f, gl_uniform1f, gl_uniform1i, &
         GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, GL_LINK_STATUS, &
         GLuint_t
     use logging, only: log_msg, LOG_INFO, LOG_ERROR
@@ -19,8 +19,8 @@ module shader_mod
 
     public :: shader_program_t
     public :: shader_load, shader_use, shader_destroy
-    public :: set_uniform_mat4, set_uniform_vec3, set_uniform_float, &
-              set_uniform_int
+    public :: set_uniform_mat4, set_uniform_vec2, set_uniform_vec3, &
+              set_uniform_float, set_uniform_int
 
     type, public :: shader_program_t
         integer(c_int) :: id = 0_c_int
@@ -122,6 +122,15 @@ contains
         loc = gl_get_uniform_location(prog%id, name)
         if (loc >= 0_c_int) call gl_uniform_matrix4fv(loc, 1_c_int, .false., m)
     end subroutine set_uniform_mat4
+
+    subroutine set_uniform_vec2(prog, name, x, y)
+        type(shader_program_t), intent(in) :: prog
+        character(len=*), intent(in) :: name
+        real(c_float), intent(in) :: x, y
+        integer(c_int) :: loc
+        loc = gl_get_uniform_location(prog%id, name)
+        if (loc >= 0_c_int) call gl_uniform2f(loc, x, y)
+    end subroutine set_uniform_vec2
 
     subroutine set_uniform_vec3(prog, name, x, y, z)
         type(shader_program_t), intent(in) :: prog

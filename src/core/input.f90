@@ -41,6 +41,7 @@ module input_mod
     integer, parameter, public :: KEY_B        = 66
     integer, parameter, public :: KEY_LBRACKET = 91
     integer, parameter, public :: KEY_RBRACKET = 93
+    integer, parameter, public :: KEY_F2       = 291
     integer, parameter, public :: KEY_F12      = 301
 
     ! Mouse buttons

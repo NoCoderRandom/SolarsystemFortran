@@ -56,6 +56,8 @@ module gl_bindings
     integer(c_int), parameter :: GL_FRONT_FACE             = int(z'0B46', c_int)
     integer, parameter :: GL_UNSIGNED_INT = int(z'1405', c_int)
     integer(c_int), parameter :: GL_LINE_STRIP             = int(z'0003', c_int)
+    integer(c_int), parameter :: GL_POINTS                 = int(z'0000', c_int)
+    integer(c_int), parameter :: GL_PROGRAM_POINT_SIZE     = int(z'8642', c_int)
     integer(c_int), parameter :: GL_BLEND                  = int(z'0BE2', c_int)
     integer(c_int), parameter :: GL_LINE                   = int(z'1B01', c_int)
     integer(c_int), parameter :: GL_SRC_ALPHA              = int(z'0302', c_int)
@@ -81,10 +83,24 @@ module gl_bindings
     integer(c_int), parameter :: GL_TEXTURE0               = int(z'84C0', c_int)
     integer(c_int), parameter :: GL_TEXTURE1               = int(z'84C1', c_int)
     integer(c_int), parameter :: GL_TEXTURE2               = int(z'84C2', c_int)
+    integer(c_int), parameter :: GL_TEXTURE3               = int(z'84C3', c_int)
+    integer(c_int), parameter :: GL_TEXTURE4               = int(z'84C4', c_int)
+    integer(c_int), parameter :: GL_TEXTURE5               = int(z'84C5', c_int)
+    integer(c_int), parameter :: GL_TEXTURE6               = int(z'84C6', c_int)
+    integer(c_int), parameter :: GL_TEXTURE7               = int(z'84C7', c_int)
+    integer(c_int), parameter :: GL_REPEAT                 = int(z'2901', c_int)
+    integer(c_int), parameter :: GL_LINEAR_MIPMAP_LINEAR   = int(z'2703', c_int)
+    integer(c_int), parameter :: GL_SRGB8                  = int(z'8C41', c_int)
+    integer(c_int), parameter :: GL_SRGB8_ALPHA8           = int(z'8C43', c_int)
+    integer(c_int), parameter :: GL_TEXTURE_MAX_ANISOTROPY = int(z'84FE', c_int)
+    integer(c_int), parameter :: GL_MAX_TEXTURE_MAX_ANISO  = int(z'84FF', c_int)
     integer(c_int), parameter :: GL_RGBA                   = int(z'1908', c_int)
     integer(c_int), parameter :: GL_RGB                    = int(z'1907', c_int)
     integer(c_int), parameter :: GL_RGBA16F                = int(z'881A', c_int)
     integer(c_int), parameter :: GL_UNSIGNED_BYTE          = int(z'1401', c_int)
+    integer(c_int), parameter :: GL_VENDOR                 = int(z'1F00', c_int)
+    integer(c_int), parameter :: GL_RENDERER               = int(z'1F01', c_int)
+    integer(c_int), parameter :: GL_VERSION                = int(z'1F02', c_int)
 
     !-----------------------------------------------------------------------
     ! Public API
@@ -93,12 +109,14 @@ module gl_bindings
         ! GLFW
         glfw_init, glfw_terminate, glfw_window_hint, glfw_create_window, &
         glfw_destroy_window, glfw_make_context_current, glfw_swap_buffers, &
+        glfw_swap_interval, &
         glfw_window_should_close, glfw_get_time, glfw_get_framebuffer_size, &
         glfw_poll_events, glfw_set_key_callback, &
         glfw_set_framebuffer_size_callback, glfw_set_mouse_button_callback, &
         glfw_set_cursor_pos_callback, glfw_set_scroll_callback, &
         ! GLAD
-        glad_load_gl, &
+        glad_load_gl, gl_get_string, &
+        GL_VENDOR, GL_RENDERER, GL_VERSION, &
         ! GL state
         gl_enable, gl_disable, gl_set_cull_face, gl_set_front_face, &
         gl_clear_color, gl_clear, gl_viewport, &
@@ -147,7 +165,7 @@ module gl_bindings
         GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, &
         GL_COMPILE_STATUS, GL_LINK_STATUS, GL_INFO_LOG_LENGTH, &
         GL_DEPTH_TEST, GL_CULL_FACE, GL_BACK, GL_CCW, GL_FRONT_FACE, &
-        GL_UNSIGNED_INT, GL_LINE_STRIP, GL_BLEND, &
+        GL_UNSIGNED_INT, GL_LINE_STRIP, GL_POINTS, GL_PROGRAM_POINT_SIZE, GL_BLEND, &
         GL_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, &
         GL_FRAMEBUFFER, GL_RENDERBUFFER, &
         GL_COLOR_ATTACHMENT0, GL_DEPTH_ATTACHMENT, &
@@ -155,7 +173,11 @@ module gl_bindings
         GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, &
         GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T, GL_LINEAR, GL_NEAREST, &
         GL_CLAMP_TO_EDGE, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2, &
+        GL_TEXTURE3, GL_TEXTURE4, GL_TEXTURE5, GL_TEXTURE6, GL_TEXTURE7, &
+        GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_SRGB8, GL_SRGB8_ALPHA8, &
+        GL_TEXTURE_MAX_ANISOTROPY, GL_MAX_TEXTURE_MAX_ANISO, &
         GL_RGBA, GL_RGB, GL_RGBA16F, GL_UNSIGNED_BYTE, &
+        gl_generate_mipmap, gl_get_float, &
         GLuint_t
 
     !-----------------------------------------------------------------------
@@ -273,6 +295,17 @@ contains
         end interface
         call glfwSwapBuffers(window%ptr)
     end subroutine glfw_swap_buffers
+
+    subroutine glfw_swap_interval(interval)
+        integer, intent(in) :: interval
+        interface
+            pure subroutine glfwSwapInterval(i) bind(c, name="glfwSwapInterval")
+                import :: c_int
+                integer(c_int), value, intent(in) :: i
+            end subroutine glfwSwapInterval
+        end interface
+        call glfwSwapInterval(int(interval, c_int))
+    end subroutine glfw_swap_interval
 
     function glfw_window_should_close(window) result(should_close)
         type(GLFWwindow), intent(in) :: window
@@ -436,6 +469,32 @@ contains
         rc = gladLoadGL()
         loaded = (rc > 0_c_int)
     end function glad_load_gl
+
+    !---------------------------------------------------------------
+    ! Fetch glGetString(name) into a fixed-size buffer and return it
+    ! trimmed. `name` is the GL enum (e.g. GL_RENDERER, GL_VERSION).
+    !---------------------------------------------------------------
+    function gl_get_string(name) result(s)
+        integer(c_int), intent(in) :: name
+        character(len=255) :: s
+        character(kind=c_char), target :: buf(256)
+        integer(c_int) :: n
+        integer :: i
+        interface
+            function ss_glGetStringCopy(name_i, out, max_len) result(n_i) &
+                    bind(c, name="ss_glGetStringCopy")
+                import :: c_int, c_ptr
+                integer(c_int), value, intent(in) :: name_i, max_len
+                type(c_ptr), value, intent(in) :: out
+                integer(c_int) :: n_i
+            end function ss_glGetStringCopy
+        end interface
+        n = ss_glGetStringCopy(name, c_loc(buf(1)), 256_c_int)
+        s = ""
+        do i = 1, min(n, len(s))
+            s(i:i) = buf(i)
+        end do
+    end function gl_get_string
 
     !=====================================================================
     ! OpenGL state
@@ -1105,6 +1164,30 @@ contains
         end interface
         call ss_glActiveTexture(unit)
     end subroutine gl_active_texture
+
+    subroutine gl_generate_mipmap(target)
+        integer(c_int), intent(in) :: target
+        interface
+            pure subroutine ss_glGenerateMipmap(t) bind(c, name="ss_glGenerateMipmap")
+                import :: c_int
+                integer(c_int), value, intent(in) :: t
+            end subroutine ss_glGenerateMipmap
+        end interface
+        call ss_glGenerateMipmap(target)
+    end subroutine gl_generate_mipmap
+
+    subroutine gl_get_float(pname, out)
+        integer(c_int), intent(in) :: pname
+        real(c_float), intent(out) :: out
+        interface
+            pure subroutine ss_glGetFloatv(p, v) bind(c, name="ss_glGetFloatv")
+                import :: c_int, c_float
+                integer(c_int), value, intent(in) :: p
+                real(c_float), intent(out) :: v
+            end subroutine ss_glGetFloatv
+        end interface
+        call ss_glGetFloatv(pname, out)
+    end subroutine gl_get_float
 
     !=====================================================================
     ! Framebuffers / renderbuffers

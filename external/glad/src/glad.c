@@ -73,6 +73,8 @@ PFNGLDELETERENDERBUFFERSPROC     glad_glDeleteRenderbuffers     = NULL;
 PFNGLRENDERBUFFERSTORAGEPROC     glad_glRenderbufferStorage     = NULL;
 PFNGLFRAMEBUFFERRENDERBUFFERPROC glad_glFramebufferRenderbuffer = NULL;
 PFNGLREADPIXELSPROC              glad_glReadPixels              = NULL;
+PFNGLGENERATEMIPMAPPROC          glad_glGenerateMipmap          = NULL;
+PFNGLGETFLOATVPROC               glad_glGetFloatv               = NULL;
 
 static void* glad_gl_get_proc(const char *name) {
     return (void*)glfwGetProcAddress(name);
@@ -148,6 +150,8 @@ int gladLoadGLLoader(GLADloadproc loader) {
     L(glRenderbufferStorage, PFNGLRENDERBUFFERSTORAGEPROC);
     L(glFramebufferRenderbuffer, PFNGLFRAMEBUFFERRENDERBUFFERPROC);
     L(glReadPixels, PFNGLREADPIXELSPROC);
+    L(glGenerateMipmap, PFNGLGENERATEMIPMAPPROC);
+    L(glGetFloatv, PFNGLGETFLOATVPROC);
 #undef L
     return loaded;
 }
@@ -209,6 +213,8 @@ void ss_glDeleteTextures(GLsizei n, const GLuint *tex) { glad_glDeleteTextures(n
 void ss_glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei w, GLsizei h, GLint border, GLenum format, GLenum type, const void *pixels) { glad_glTexImage2D(target, level, internalFormat, w, h, border, format, type, pixels); }
 void ss_glTexParameteri(GLenum target, GLenum pname, GLint param) { glad_glTexParameteri(target, pname, param); }
 void ss_glActiveTexture(GLenum unit) { glad_glActiveTexture(unit); }
+void ss_glGenerateMipmap(GLenum target) { glad_glGenerateMipmap(target); }
+void ss_glGetFloatv(GLenum pname, GLfloat *v) { glad_glGetFloatv(pname, v); }
 void ss_glGenFramebuffers(GLsizei n, GLuint *out) { glad_glGenFramebuffers(n, out); }
 void ss_glBindFramebuffer(GLenum target, GLuint fb) { glad_glBindFramebuffer(target, fb); }
 void ss_glDeleteFramebuffers(GLsizei n, const GLuint *fb) { glad_glDeleteFramebuffers(n, fb); }
@@ -220,6 +226,30 @@ void ss_glDeleteRenderbuffers(GLsizei n, const GLuint *rb) { glad_glDeleteRender
 void ss_glRenderbufferStorage(GLenum target, GLenum internalFormat, GLsizei w, GLsizei h) { glad_glRenderbufferStorage(target, internalFormat, w, h); }
 void ss_glFramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum rbtarget, GLuint rb) { glad_glFramebufferRenderbuffer(target, attachment, rbtarget, rb); }
 void ss_glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum format, GLenum type, void *pixels) { glad_glReadPixels(x, y, w, h, format, type, pixels); }
+
+/* Copy GL_VERSION / GL_RENDERER into a caller-provided buffer.
+   `name` is the GL enum (e.g. 0x1F02 for GL_RENDERER). Returns the number
+   of bytes written (excluding null). Safe if the pointer is NULL. */
+/* glGetString isn't in the generated glad subset. Resolve it via GLFW's
+   proc-address loader (already used by gladLoadGLLoader at init). */
+typedef const GLubyte *(*ss_getstring_pfn)(GLenum);
+int ss_glGetStringCopy(GLenum name, char *out, int max_len) {
+    static ss_getstring_pfn pfn = 0;
+    if (!pfn) pfn = (ss_getstring_pfn)glfwGetProcAddress("glGetString");
+    if (!pfn || max_len <= 0) {
+        if (out && max_len > 0) out[0] = '\0';
+        return 0;
+    }
+    const GLubyte *s = pfn(name);
+    if (!s || max_len <= 0) {
+        if (out && max_len > 0) out[0] = '\0';
+        return 0;
+    }
+    int i = 0;
+    while (s[i] && i < max_len - 1) { out[i] = (char)s[i]; i++; }
+    out[i] = '\0';
+    return i;
+}
 
 /* ---- Minimal uncompressed PNG writer (no external zlib) ---- */
 static uint32_t ss_crc_table[256];
@@ -286,9 +316,12 @@ int ss_write_png(const char *path, int w, int h, const unsigned char *rgb) {
     size_t row_len = (size_t)(3 * w + 1);
     size_t raw_len = row_len * (size_t)h;
     unsigned char *raw = (unsigned char*)malloc(raw_len);
+    /* OpenGL glReadPixels returns rows bottom-up; PNG wants them top-down. */
     for (int y = 0; y < h; y++) {
         raw[y * row_len] = 0;
-        memcpy(raw + y * row_len + 1, rgb + (size_t)y * 3 * w, (size_t)(3 * w));
+        memcpy(raw + y * row_len + 1,
+               rgb + (size_t)(h - 1 - y) * 3 * w,
+               (size_t)(3 * w));
     }
 
     size_t max_blocks = (raw_len + 65534) / 65535;

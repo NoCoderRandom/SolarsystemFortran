@@ -85,6 +85,7 @@ set(RENDER_SOURCES
     src/render/starfield.f90
     src/render/asteroids.f90
     src/render/post.f90
+    src/render/demo.f90
 )
 
 # ---------------------------------------------------------------------------

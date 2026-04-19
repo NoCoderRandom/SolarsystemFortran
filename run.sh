@@ -11,6 +11,8 @@
 #   ./run.sh --screenshot         # headless overview shot, then exit
 #   ./run.sh --screenshot-earth   # Earth close-up
 #   ./run.sh --screenshot-saturn  # Saturn + rings close-up
+#   ./run.sh --demo               # 40-second automatic showcase
+#   ./run.sh --demo-record DIR    # render PNG frames into DIR
 #
 set -euo pipefail
 

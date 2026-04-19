@@ -19,6 +19,7 @@ program solarsim
                          input_cursor_pos_callback, input_scroll_callback, &
                          KEY_SPACE, KEY_0, KEY_EQUALS, KEY_MINUS, KEY_PLUS, &
                          KEY_R, KEY_H, KEY_T, KEY_B, KEY_LBRACKET, KEY_RBRACKET, &
+                         KEY_ESCAPE, &
                          KEY_F2, KEY_F12
     use config_mod, only: sim_config_t, config_init, config_set_speed_preset, &
                          config_step_speed_preset, config_speed_label, &
@@ -43,6 +44,9 @@ program solarsim
     use camera_mod, only: camera_t, camera_init, camera_update, camera_get_view, &
                           camera_get_projection, camera_reset, camera_set_focus, &
                           camera_handle_input
+    use demo_mod, only: demo_state_t, demo_overlay_t, demo_init, demo_start, demo_apply, &
+                        demo_advance, demo_name, demo_slug, demo_is_showcase, &
+                        DEMO_CAPTURE_FPS, DEMO_COUNT, MAX_DEMO_BODIES, DEMO_ID_SHOWCASE
     use date_utils, only: sim_date_t, j2000_to_date
     use constants, only: AU
     use hud_text, only: hud_text_t, hud_text_init, hud_text_shutdown, &
@@ -80,6 +84,8 @@ program solarsim
     integer, parameter :: ACTION_SCREENSHOT    = 100
     integer, parameter :: ACTION_SCREENSHOT_TS = 101
     integer, parameter :: ACTION_QUIT          = 102
+    integer, parameter :: ACTION_DEMO_BASE     = 103
+    integer, parameter :: ACTION_DEMO_RECORD_BASE = ACTION_DEMO_BASE + DEMO_COUNT
     integer, parameter :: ACTION_CAMERA_RESET  = 110
     integer, parameter :: ACTION_FOCUS_BASE    = 120   ! 120..128 for Sun..Neptune
     integer, parameter :: ACTION_SPEED_SLOWER  = 130
@@ -106,17 +112,27 @@ program solarsim
     type(starfield_t)   :: sky
     type(asteroids_t)   :: belt
     type(menu_t)        :: menu
+    type(demo_state_t)  :: demo
+    type(demo_overlay_t):: demo_overlay
     real(real64)        :: accumulator, sim_time, last_frame_time, frame_dt
     real(real64)        :: alpha, fps_smooth
     integer             :: frame_count, step_count
     logical             :: running, auto_screenshot, config_dirty
     character(len=64)   :: arg1
+    character(len=256)  :: arg2
     character(len=128)  :: screenshot_path = "../screenshots/phase8_overview.png"
+    character(len=256)  :: demo_frame_dir = "screenshots/demo_frames"
+    character(len=256)  :: demo_video_path = ""
     integer             :: screenshot_focus = -1
     integer             :: win_w, win_h
     real(real64)        :: au_val
+    logical             :: demo_finished
+    logical             :: demo_encode_video = .false.
+    logical             :: saved_hud_visible, saved_trails_visible, saved_bloom_on
+    logical             :: saved_distance_log_scale, saved_paused, saved_vsync
+    integer             :: saved_speed_preset
 
-    type(body_t), allocatable :: bodies_prev(:), bodies_interp(:)
+    type(body_t), allocatable :: bodies_prev(:), bodies_interp(:), scene_bodies(:)
 
     call log_init(LOG_DEBUG)
     call log_msg(LOG_INFO, "=== Solar System Simulation ===")
@@ -151,7 +167,7 @@ program solarsim
     !-----------------------------------------------------------------------
     ! Init renderer, camera, HUD, input, config
     !-----------------------------------------------------------------------
-    call renderer_init(renderer, win_w, win_h, sim%n_bodies())
+    call renderer_init(renderer, win_w, win_h, sim%n_bodies() + MAX_DEMO_BODIES)
     call load_materials()
     au_val = AU
     call trails_init(trails, sim%n_bodies(), cfg%trail_length)
@@ -165,6 +181,7 @@ program solarsim
     call build_menu()
     call input_init(inp)
     call register_input_callbacks()
+    call demo_init(demo)
     call post_init(post, win_w, win_h, cfg%bloom_mips)
     call sun_init(sun)
     call starfield_init(sky, cfg%starfield_count)
@@ -173,8 +190,10 @@ program solarsim
 
     allocate(bodies_prev(sim%n_bodies()))
     allocate(bodies_interp(sim%n_bodies()))
+    allocate(scene_bodies(sim%n_bodies() + MAX_DEMO_BODIES))
     bodies_prev = sim%bodies
     bodies_interp = sim%bodies
+    scene_bodies(1:sim%n_bodies()) = sim%bodies
 
     !-----------------------------------------------------------------------
     ! Main loop
@@ -216,6 +235,16 @@ program solarsim
         if (trim(arg1) == "--screenshot") then
             screenshot_path = "../screenshots/phase8_overview.png"
         end if
+        if (trim(arg1) == "--demo") then
+            call start_demo_mode(DEMO_ID_SHOWCASE, .false., .true.)
+        end if
+        if (trim(arg1) == "--demo-record") then
+            if (command_argument_count() >= 2) then
+                call get_command_argument(2, arg2)
+                if (len_trim(arg2) > 0) demo_frame_dir = trim(arg2)
+            end if
+            call start_demo_mode(DEMO_ID_SHOWCASE, .true., .true.)
+        end if
     end if
     if (screenshot_focus >= 0 .or. screenshot_focus < -1) then
         ! Park the camera there — flush the smooth transition.
@@ -243,10 +272,15 @@ program solarsim
         end if
 
         ! Frame timing
-        frame_dt = window_get_time() - last_frame_time
-        last_frame_time = window_get_time()
-        if (frame_dt > 0.25_real64) frame_dt = 0.25_real64
-        if (frame_dt < 0.001_real64) frame_dt = 0.001_real64
+        if (demo%active .and. demo%capture_frames) then
+            frame_dt = 1.0_real64 / real(DEMO_CAPTURE_FPS, real64)
+            last_frame_time = window_get_time()
+        else
+            frame_dt = window_get_time() - last_frame_time
+            last_frame_time = window_get_time()
+            if (frame_dt > 0.25_real64) frame_dt = 0.25_real64
+            if (frame_dt < 0.001_real64) frame_dt = 0.001_real64
+        end if
 
         ! Smooth FPS
         fps_smooth = fps_smooth * 0.95_real64 + (1.0_real64 / frame_dt) * 0.05_real64
@@ -297,8 +331,13 @@ program solarsim
         !-------------------------------------------------------------------
         ! Update camera
         !-------------------------------------------------------------------
+        if (demo%active) then
+            call demo_apply(demo, cam, bodies_interp, cfg%focus_index, demo_overlay)
+        else
+            demo_overlay%count = 0
+        end if
         call camera_update(cam, real(frame_dt, c_float))
-        if (.not. menu_mouse_captured(menu, &
+        if ((.not. demo%active) .and. .not. menu_mouse_captured(menu, &
                   real(inp%mouse_x, c_float), real(inp%mouse_y, c_float))) then
             call camera_handle_input(cam, real(inp%mouse_dx, c_float), &
                                      real(inp%mouse_dy, c_float), &
@@ -324,6 +363,7 @@ program solarsim
                               real(cfg%starfield_intensity, c_float))
         call perf_toc("starfield")
 
+        call compose_scene_bodies()
         renderer%camera = cam
         block
             real(c_float) :: sun_pos(3)
@@ -331,7 +371,7 @@ program solarsim
             sun_pos(2) = real(bodies_interp(1)%position%y / au_val, c_float)
             sun_pos(3) = real(bodies_interp(1)%position%z / au_val, c_float)
             call perf_tic("planets")
-            call renderer_render(renderer, bodies_interp, sun_pos, &
+            call renderer_render(renderer, scene_bodies(1:sim%n_bodies() + demo_overlay%count), sun_pos, &
                                  cfg%distance_log_scale)
             call perf_toc("planets")
             call perf_tic("asteroids")
@@ -380,6 +420,9 @@ program solarsim
         if (inp%key_just_pressed(KEY_F2)) then
             call take_screenshot_timestamped()
         end if
+        if (demo%active .and. demo%capture_frames) then
+            call take_demo_capture_frame()
+        end if
 
         frame_count = frame_count + 1
         ! Only Earth uses the sun-perpendicular "vertical terminator" framing;
@@ -395,6 +438,12 @@ program solarsim
             call take_screenshot()
             running = .false.
         end if
+        call demo_advance(demo, real(frame_dt, c_float), demo_finished)
+        if (demo_finished) then
+            if (demo_encode_video) call encode_demo_video()
+            if (.not. demo%quit_on_finish) call finish_demo_mode()
+        end if
+        if (demo_finished .and. demo%quit_on_finish) running = .false.
 
         call window_swap_buffers()
     end do
@@ -417,6 +466,7 @@ program solarsim
     call sim%shutdown()
     if (allocated(bodies_prev)) deallocate(bodies_prev)
     if (allocated(bodies_interp)) deallocate(bodies_interp)
+    if (allocated(scene_bodies)) deallocate(scene_bodies)
     call window_close()
     call log_shutdown()
 
@@ -440,6 +490,16 @@ contains
     !=====================================================================
     subroutine handle_input()
         integer :: i
+
+        if (demo%active) then
+            if (inp%key_just_pressed(KEY_ESCAPE)) then
+                demo%active = .false.
+                if (demo_encode_video) call encode_demo_video()
+                call finish_demo_mode()
+                call log_msg(LOG_INFO, "Demo cancelled")
+            end if
+            return
+        end if
 
         ! Focus keys: 0-8
         do i = 0, 8
@@ -544,6 +604,99 @@ contains
         config_dirty = .false.
     end subroutine persist_runtime_config
 
+    subroutine start_demo_mode(demo_id, capture_frames, quit_on_finish)
+        integer, intent(in) :: demo_id
+        logical, intent(in) :: capture_frames, quit_on_finish
+
+        call save_demo_runtime_state()
+        call demo_start(demo, demo_id, capture_frames, quit_on_finish)
+        cfg%hud_visible = .false.
+        cfg%trails_visible = .false.
+        cfg%bloom_on = .true.
+        if (demo_is_showcase(demo_id)) then
+            cfg%paused = .false.
+            cfg%distance_log_scale = .true.
+            call config_set_speed_preset(cfg, SPEED_PRESET_COUNT)
+        else
+            cfg%paused = .true.
+            cfg%distance_log_scale = .false.
+        end if
+        if (capture_frames) call window_set_vsync(.false.)
+        call log_msg(LOG_INFO, "Demo started: " // trim(demo_name(demo_id)))
+    end subroutine start_demo_mode
+
+    subroutine save_demo_runtime_state()
+        saved_hud_visible = cfg%hud_visible
+        saved_trails_visible = cfg%trails_visible
+        saved_bloom_on = cfg%bloom_on
+        saved_distance_log_scale = cfg%distance_log_scale
+        saved_paused = cfg%paused
+        saved_vsync = cfg%vsync
+        saved_speed_preset = cfg%speed_preset
+    end subroutine save_demo_runtime_state
+
+    subroutine finish_demo_mode()
+        cfg%hud_visible = saved_hud_visible
+        cfg%trails_visible = saved_trails_visible
+        cfg%bloom_on = saved_bloom_on
+        cfg%distance_log_scale = saved_distance_log_scale
+        cfg%paused = saved_paused
+        call config_set_speed_preset(cfg, saved_speed_preset)
+        cfg%vsync = saved_vsync
+        call window_set_vsync(saved_vsync)
+        demo_encode_video = .false.
+        demo_video_path = ""
+        demo_frame_dir = "screenshots/demo_frames"
+        demo_overlay%count = 0
+    end subroutine finish_demo_mode
+
+    subroutine start_demo_recording(demo_id)
+        integer, intent(in) :: demo_id
+        integer :: dt(8)
+
+        call date_and_time(values=dt)
+        write(demo_frame_dir, "('screenshots/demo_frames_',A,'_',I4.4,I2.2,I2.2,'_',I2.2,I2.2,I2.2)") &
+            trim(demo_slug(demo_id)), dt(1), dt(2), dt(3), dt(5), dt(6), dt(7)
+        write(demo_video_path, "('screenshots/',A,'_',I4.4,I2.2,I2.2,'_',I2.2,I2.2,I2.2,'.mp4')") &
+            trim(demo_slug(demo_id)), dt(1), dt(2), dt(3), dt(5), dt(6), dt(7)
+        call ensure_directory(trim(demo_frame_dir))
+        call ensure_directory("screenshots")
+        demo_encode_video = .true.
+        call start_demo_mode(demo_id, .true., .false.)
+    end subroutine start_demo_recording
+
+    subroutine encode_demo_video()
+        integer :: rc
+        character(len=1024) :: cmd
+
+        if (.not. demo_encode_video) return
+        if (.not. command_exists("ffmpeg")) then
+            call log_msg(LOG_ERROR, "Recording failed: ffmpeg not found")
+            return
+        end if
+
+        write(cmd, "(A)") "ffmpeg -y -framerate 30 -i '" // trim(demo_frame_dir) // &
+            "/frame_%05d.png' -c:v libx265 -preset medium -crf 24 -pix_fmt yuv420p " // &
+            "-tag:v hvc1 -movflags +faststart '" // trim(demo_video_path) // "'"
+        call execute_command_line(trim(cmd), wait=.true., exitstat=rc)
+        if (rc == 0) then
+            call log_msg(LOG_INFO, "Demo video: " // trim(demo_video_path))
+            call delete_directory(trim(demo_frame_dir))
+        else
+            call log_msg(LOG_ERROR, "ffmpeg encode failed for " // trim(demo_video_path))
+        end if
+    end subroutine encode_demo_video
+
+    subroutine compose_scene_bodies()
+        integer :: i, n
+
+        n = sim%n_bodies()
+        scene_bodies(1:n) = bodies_interp
+        do i = 1, demo_overlay%count
+            scene_bodies(n + i) = demo_overlay%bodies(i)
+        end do
+    end subroutine compose_scene_bodies
+
     !=====================================================================
     ! Focus camera on a body
     !=====================================================================
@@ -616,9 +769,12 @@ contains
             end if
         end if
 
-        ! Menu bar + any open drop-down — shares the HUD-visible flag so
-        ! screenshots (and the H keybind) can clear the whole overlay.
-        if (cfg%hud_visible) call menu_render(menu, hud, win_w)
+        ! Keep the top menu available during normal interaction even when the
+        ! user hides the stats/readout HUD. Auto-screenshots and demos still
+        ! suppress the menu for a clean frame.
+        if ((.not. auto_screenshot) .and. (.not. demo%active)) then
+            call menu_render(menu, hud, win_w)
+        end if
 
         call hud_text_render(hud, win_w, win_h)
     end subroutine render_hud_and_menu
@@ -744,37 +900,35 @@ contains
     ! F12 — read back default framebuffer and write screenshots/phase6.png
     !=====================================================================
     subroutine take_screenshot()
-        use, intrinsic :: iso_c_binding, only: c_loc, c_signed_char
-        integer(c_int) :: w, h, rc
-        integer(c_signed_char), allocatable, target :: pixels(:)
-
-        w = int(win_w, c_int)
-        h = int(win_h, c_int)
-        allocate(pixels(3 * w * h))
-        call gl_read_pixels_rgb(0_c_int, 0_c_int, w, h, c_loc(pixels(1)))
-
-        rc = ss_write_png_c(trim(screenshot_path) // char(0), w, h, c_loc(pixels(1)))
-        if (rc == 1_c_int) then
-            call log_msg(LOG_INFO, "Screenshot: " // trim(screenshot_path))
-        else
-            call log_msg(LOG_ERROR, "Screenshot failed")
-        end if
-        deallocate(pixels)
+        call write_png_capture(trim(screenshot_path), log_result=.true.)
     end subroutine take_screenshot
 
     !=====================================================================
     ! F2 — timestamped PNG of the tonemapped backbuffer into screenshots/.
     !=====================================================================
     subroutine take_screenshot_timestamped()
-        use, intrinsic :: iso_c_binding, only: c_loc, c_signed_char
-        integer(c_int) :: w, h, rc
-        integer(c_signed_char), allocatable, target :: pixels(:)
         integer :: dt(8)
         character(len=160) :: path
 
         call date_and_time(values=dt)
         write(path, "('screenshots/solarsim_',I4.4,I2.2,I2.2,'_',I2.2,I2.2,I2.2,'.png')") &
             dt(1), dt(2), dt(3), dt(5), dt(6), dt(7)
+        call write_png_capture(trim(path), log_result=.true.)
+    end subroutine take_screenshot_timestamped
+
+    subroutine take_demo_capture_frame()
+        character(len=320) :: path
+
+        write(path, "(A,'/frame_',I5.5,'.png')") trim(demo_frame_dir), demo%frame_index + 1
+        call write_png_capture(trim(path), log_result=.false.)
+    end subroutine take_demo_capture_frame
+
+    subroutine write_png_capture(path, log_result)
+        use, intrinsic :: iso_c_binding, only: c_loc, c_signed_char
+        character(len=*), intent(in) :: path
+        logical, intent(in) :: log_result
+        integer(c_int) :: w, h, rc
+        integer(c_signed_char), allocatable, target :: pixels(:)
 
         w = int(win_w, c_int)
         h = int(win_h, c_int)
@@ -782,13 +936,17 @@ contains
         call gl_read_pixels_rgb(0_c_int, 0_c_int, w, h, c_loc(pixels(1)))
 
         rc = ss_write_png_c(trim(path) // char(0), w, h, c_loc(pixels(1)))
-        if (rc == 1_c_int) then
-            call log_msg(LOG_INFO, "Screenshot: " // trim(path))
-        else
-            call log_msg(LOG_ERROR, "Screenshot failed: " // trim(path))
+        if (log_result) then
+            if (rc == 1_c_int) then
+                call log_msg(LOG_INFO, "Screenshot: " // trim(path))
+            else
+                call log_msg(LOG_ERROR, "Screenshot failed: " // trim(path))
+            end if
+        else if (rc /= 1_c_int) then
+            call log_msg(LOG_ERROR, "Demo frame write failed: " // trim(path))
         end if
         deallocate(pixels)
-    end subroutine take_screenshot_timestamped
+    end subroutine write_png_capture
 
     !=====================================================================
     ! Load planet textures and build materials.
@@ -883,6 +1041,38 @@ contains
         call texture_load(m%albedo, "assets/planets/2k_neptune.jpg")
         call renderer_set_material(renderer, 9, m)
 
+        if (size(renderer%materials) >= 13) then
+            m = blank
+            m%kind = MATERIAL_GENERIC
+            m%shininess = 24.0_c_float
+            m%spec_scale = 0.04_c_float
+            call texture_load(m%albedo, "assets/planets/2k_mercury.jpg")
+            call renderer_set_material(renderer, 10, m)
+
+            m = blank
+            m%kind = MATERIAL_GENERIC
+            m%shininess = 18.0_c_float
+            m%spec_scale = 0.02_c_float
+            call texture_load(m%albedo, "assets/planets/2k_venus_surface.jpg")
+            call renderer_set_material(renderer, 11, m)
+
+            m = blank
+            m%kind = MATERIAL_GENERIC
+            m%shininess = 16.0_c_float
+            m%spec_scale = 0.03_c_float
+            call texture_load(m%albedo, "assets/planets/2k_mars.jpg")
+            call renderer_set_material(renderer, 12, m)
+
+            m = blank
+            m%kind = MATERIAL_GAS_GIANT
+            m%shininess = 8.0_c_float
+            m%spec_scale = 0.0_c_float
+            m%rim_power = 3.0_c_float
+            m%rim_color = [0.85_c_float, 0.65_c_float, 0.45_c_float]
+            call texture_load(m%albedo, "assets/planets/2k_jupiter.jpg")
+            call renderer_set_material(renderer, 13, m)
+        end if
+
         ! Saturn's rings
         if (cfg%load_saturn_rings) then
             call rings_init(rings, "assets/planets/2k_saturn_ring_alpha.png", &
@@ -904,10 +1094,10 @@ contains
     ! menu_pop_action.
     !=====================================================================
     subroutine build_menu()
-        integer :: d_file, d_view, d_camera, d_render, i
+        integer :: d_file, d_view, d_camera, d_render, d_demos, i
         type(menu_item_t) :: it
 
-        call menu_init(menu, 4)
+        call menu_init(menu, 5)
 
         !-- File -----------------------------------------------------
         call menu_add_dropdown(menu, "File", 5, d_file)
@@ -923,10 +1113,32 @@ contains
         it%action_id = ACTION_QUIT
         call menu_add_item(menu, d_file, it)
 
+        !-- Demos ----------------------------------------------------
+        call menu_add_dropdown(menu, "Demos", 2 * DEMO_COUNT + (DEMO_COUNT - 1), d_demos)
+        do i = 1, DEMO_COUNT
+            it = blank_item()
+            it%kind = ITEM_BUTTON
+            it%label = trim(demo_name(i))
+            it%action_id = ACTION_DEMO_BASE + (i - 1)
+            call menu_add_item(menu, d_demos, it)
+
+            it = blank_item()
+            it%kind = ITEM_BUTTON
+            it%label = "Record " // trim(demo_name(i))
+            it%action_id = ACTION_DEMO_RECORD_BASE + (i - 1)
+            call menu_add_item(menu, d_demos, it)
+
+            if (i < DEMO_COUNT) then
+                it = blank_item()
+                it%kind = ITEM_SEPARATOR
+                call menu_add_item(menu, d_demos, it)
+            end if
+        end do
+
         !-- View -----------------------------------------------------
         call menu_add_dropdown(menu, "View", 7, d_view)
         it = blank_item()
-        it%kind = ITEM_TOGGLE; it%label = "Show HUD"
+        it%kind = ITEM_TOGGLE; it%label = "Show Stats"
         it%field_id = FIELD_HUD; it%bool_value = cfg%hud_visible
         call menu_add_item(menu, d_view, it)
         it%label = "Show Orbit Trails"
@@ -1090,6 +1302,14 @@ contains
         case (ACTION_SPEED_FASTER)
             call step_speed_preset(1)
         case default
+            if (act >= ACTION_DEMO_BASE .and. act < ACTION_DEMO_BASE + DEMO_COUNT) then
+                call start_demo_mode(act - ACTION_DEMO_BASE + 1, .false., .false.)
+                return
+            end if
+            if (act >= ACTION_DEMO_RECORD_BASE .and. act < ACTION_DEMO_RECORD_BASE + DEMO_COUNT) then
+                call start_demo_recording(act - ACTION_DEMO_RECORD_BASE + 1)
+                return
+            end if
             if (act >= ACTION_FOCUS_BASE .and. act <= ACTION_FOCUS_BASE + 8) then
                 cfg%focus_index = act - ACTION_FOCUS_BASE
                 call focus_on_body(cfg%focus_index)
@@ -1135,5 +1355,33 @@ contains
             call trails_push_body(trails, i, pos_au)
         end do
     end subroutine push_trails
+
+    subroutine ensure_directory(path)
+        character(len=*), intent(in) :: path
+        integer :: rc
+        character(len=512) :: cmd
+
+        write(cmd, "(A)") "mkdir -p '" // trim(path) // "'"
+        call execute_command_line(trim(cmd), wait=.true., exitstat=rc)
+    end subroutine ensure_directory
+
+    subroutine delete_directory(path)
+        character(len=*), intent(in) :: path
+        integer :: rc
+        character(len=512) :: cmd
+
+        write(cmd, "(A)") "rm -rf '" // trim(path) // "'"
+        call execute_command_line(trim(cmd), wait=.true., exitstat=rc)
+    end subroutine delete_directory
+
+    logical function command_exists(name)
+        character(len=*), intent(in) :: name
+        integer :: rc
+        character(len=512) :: cmd
+
+        write(cmd, "(A)") "command -v '" // trim(name) // "' >/dev/null 2>&1"
+        call execute_command_line(trim(cmd), wait=.true., exitstat=rc)
+        command_exists = (rc == 0)
+    end function command_exists
 
 end program solarsim

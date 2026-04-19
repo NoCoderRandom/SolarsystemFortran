@@ -1,0 +1,9 @@
+# Ubuntu / Debian package list for Linux and WSL2 installs.
+# install.sh reads this file directly.
+
+build-essential
+cmake
+gfortran
+libglfw3-dev
+make
+pkg-config

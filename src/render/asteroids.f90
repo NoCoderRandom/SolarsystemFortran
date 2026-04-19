@@ -366,13 +366,14 @@ contains
             ! Spin rate 0.01..0.4 rad/s of simulated time. Sign random.
             spin = (0.01_c_float + 0.39_c_float * r7) * merge(1.0_c_float, -1.0_c_float, r8 > 0.5_c_float)
 
-            ! Asteroid size: fat-tail — a handful are visibly large.
+            ! Asteroid size in render-space AU. Keep a mild fat tail so a few
+            ! bodies catch the light, but avoid planet-sized chunks.
             call random_number(scale)
-            scale = scale ** 5.0_c_float
+            scale = scale ** 4.5_c_float
             select case (variant_seed)
-            case (1); scale = 0.004_c_float + 0.010_c_float * scale
-            case (2); scale = 0.003_c_float + 0.007_c_float * scale
-            case default; scale = 0.002_c_float + 0.005_c_float * scale
+            case (1); scale = 0.0008_c_float + 0.0022_c_float * scale
+            case (2); scale = 0.0006_c_float + 0.0016_c_float * scale
+            case default; scale = 0.0004_c_float + 0.0012_c_float * scale
             end select
 
             call random_number(gray)

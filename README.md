@@ -26,6 +26,8 @@ between Fortran and the driver.
 ## Contents
 
 - [Gallery](#gallery)
+- [Requirements](#requirements)
+- [Install on Ubuntu / Debian / WSL2](#install-on-ubuntu--debian--wsl2)
 - [Quick start](#quick-start)
 - [Controls](#controls)
 - [Configuration (`config.toml`)](#configuration)
@@ -53,19 +55,78 @@ simulator's own HDR pipeline.
 
 ---
 
+## Requirements
+
+To build from source you need:
+
+- `gfortran` with Fortran 2018 support
+- `cmake` 3.18+
+- `make`
+- `build-essential`
+- `pkg-config`
+- `libglfw3-dev`
+
+The repo includes an Ubuntu/Debian package manifest at
+`requirements/ubuntu-apt.txt`, and `./install.sh` uses that list directly.
+
+## Install on Ubuntu / Debian / WSL2
+
+### Fast path
+
+```bash
+git clone https://github.com/NoCoderRandom/SolarsystemFortran.git
+cd SolarsystemFortran
+./install.sh
+./run.sh
+```
+
+`./install.sh` will:
+
+- install the required apt packages on Debian-family systems
+- configure a CMake build in `build/`
+- compile the simulator
+- run tests only if a local `tests/` directory exists
+
+### WSL2 notes
+
+This project works on WSL2 with Ubuntu. You need a working Linux GUI/OpenGL
+path:
+
+- On Windows 11, WSLg is usually enough out of the box.
+- On older setups, use an X server / OpenGL-capable desktop path before
+  launching the simulator window.
+
+If you only want to install dependencies first:
+
+```bash
+./install.sh --deps-only
+```
+
+If your system packages are already installed:
+
+```bash
+./install.sh --no-apt
+```
+
+If you are on a non-Debian Linux distro, install the equivalent packages for
+your package manager, then run:
+
+```bash
+./install.sh --no-apt
+```
+
 ## Quick start
 
 ```bash
-# One-shot setup: installs apt deps, configures CMake, builds Release.
+# One-shot setup for Ubuntu / Debian / WSL2.
 ./install.sh
 
 # Launch the simulator from the project root (wraps cd build && ./solarsim)
 ./run.sh
 ```
 
-If you already have the toolchain (`gfortran ≥ 9`, `cmake ≥ 3.18`,
-`libglfw3-dev ≥ 3.3`, `build-essential`), `./install.sh --no-apt` skips the
-package step.
+If you already have the toolchain, `./install.sh --no-apt` skips the package
+step.
 
 Alternatively:
 
@@ -183,7 +244,9 @@ TOML subset — flat key = value only; no arrays, no nested tables.
 
 ```
 SolarsystemFortran/
-├── install.sh               # apt + cmake + Release build
+├── install.sh               # Linux / WSL2 dependency install + build helper
+├── requirements/
+│   └── ubuntu-apt.txt       # apt packages consumed by install.sh
 ├── run.sh                   # launch wrapper (cd build && ./solarsim)
 ├── CMakeLists.txt           # solarsim target + optional ctest + asset copy
 ├── README.md                # you are here

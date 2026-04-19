@@ -17,7 +17,7 @@ module gl_bindings
     !-----------------------------------------------------------------------
     ! GLFW constants
     !-----------------------------------------------------------------------
-    integer(c_int), parameter :: GLFW_KEY_ESCAPE          = 256_c_int + 44
+    integer(c_int), parameter :: GLFW_KEY_ESCAPE          = 256_c_int
     integer(c_int), parameter :: GLFW_PRESS               = 1
     integer(c_int), parameter :: GLFW_RELEASE             = 0
     integer(c_int), parameter :: GLFW_REPEAT              = 1

@@ -53,6 +53,8 @@ module menu_mod
     real(c_float), parameter :: PANEL_HOVER(3) = [0.22_c_float, 0.30_c_float, 0.45_c_float]
     real(c_float), parameter :: SEP_COLOR(3)   = [0.25_c_float, 0.28_c_float, 0.35_c_float]
     real(c_float), parameter :: TEXT_COLOR(3)  = [0.92_c_float, 0.94_c_float, 0.98_c_float]
+    real(c_float), parameter :: TEXT_BACKDROP(3) = [0.05_c_float, 0.06_c_float, 0.08_c_float]
+    real(c_float), parameter :: TEXT_BACKDROP_ACTIVE(3) = [0.08_c_float, 0.11_c_float, 0.16_c_float]
     real(c_float), parameter :: CHECK_ON(3)    = [0.55_c_float, 0.90_c_float, 0.55_c_float]
     real(c_float), parameter :: CHECK_OFF(3)   = [0.35_c_float, 0.35_c_float, 0.40_c_float]
     real(c_float), parameter :: SLIDER_TRACK(3)= [0.30_c_float, 0.32_c_float, 0.38_c_float]
@@ -317,6 +319,7 @@ contains
         integer :: i, j, nitems
         real(c_float) :: panel_x, panel_y, row_y, ph
         real(c_float) :: sx, tnorm, fill_w
+        real(c_float) :: label_w
         real(c_float) :: bg(3)
         character(len=48) :: vbuf
         logical :: highlight
@@ -345,6 +348,14 @@ contains
                                    menu%drop(i)%title_w, MENU_BAR_H, &
                                    bg(1), bg(2), bg(3))
             end if
+            label_w = hud_text_width(trim(menu%drop(i)%title))
+            call hud_text_rect(hud, &
+                menu%drop(i)%title_x + MENU_PAD_X - 4.0_c_float, &
+                0.5_c_float * (MENU_BAR_H - GLYPH_H) - 1.0_c_float, &
+                label_w + 8.0_c_float, GLYPH_H + 2.0_c_float, &
+                merge(TEXT_BACKDROP_ACTIVE(1), TEXT_BACKDROP(1), highlight), &
+                merge(TEXT_BACKDROP_ACTIVE(2), TEXT_BACKDROP(2), highlight), &
+                merge(TEXT_BACKDROP_ACTIVE(3), TEXT_BACKDROP(3), highlight))
             call hud_text_draw(hud, &
                 menu%drop(i)%title_x + MENU_PAD_X, &
                 0.5_c_float * (MENU_BAR_H - GLYPH_H), &
@@ -376,6 +387,13 @@ contains
                         row_y = row_y + MENU_SEP_H
 
                     case (ITEM_LABEL)
+                        label_w = hud_text_width(trim(it%label))
+                        call hud_text_rect(hud, &
+                            panel_x + 10.0_c_float, &
+                            row_y + 0.5_c_float * (MENU_ITEM_H - GLYPH_H) - 1.0_c_float, &
+                            min(label_w + 8.0_c_float, MENU_PANEL_W - 20.0_c_float), &
+                            GLYPH_H + 2.0_c_float, &
+                            TEXT_BACKDROP(1), TEXT_BACKDROP(2), TEXT_BACKDROP(3))
                         call hud_text_draw(hud, &
                             panel_x + 12.0_c_float, &
                             row_y + 0.5_c_float * (MENU_ITEM_H - GLYPH_H), &
@@ -392,6 +410,18 @@ contains
                                                PANEL_HOVER(1), PANEL_HOVER(2), PANEL_HOVER(3))
                         end if
 
+                        label_w = hud_text_width(trim(it%label))
+                        call hud_text_rect(hud, &
+                            panel_x + 24.0_c_float, &
+                            row_y + 0.5_c_float * (MENU_ITEM_H - GLYPH_H) - 1.0_c_float, &
+                            min(label_w + 8.0_c_float, MENU_PANEL_W - 110.0_c_float), &
+                            GLYPH_H + 2.0_c_float, &
+                            merge(TEXT_BACKDROP_ACTIVE(1), TEXT_BACKDROP(1), &
+                                  menu%hovered_drop == i .and. menu%hovered_item == j), &
+                            merge(TEXT_BACKDROP_ACTIVE(2), TEXT_BACKDROP(2), &
+                                  menu%hovered_drop == i .and. menu%hovered_item == j), &
+                            merge(TEXT_BACKDROP_ACTIVE(3), TEXT_BACKDROP(3), &
+                                  menu%hovered_drop == i .and. menu%hovered_item == j))
                         call hud_text_draw(hud, &
                             panel_x + 28.0_c_float, &
                             row_y + 0.5_c_float * (MENU_ITEM_H - GLYPH_H), &
@@ -437,6 +467,12 @@ contains
                             ! Numeric readout to the right of the track,
                             ! drawn above it (no room beside on narrow panels).
                             write(vbuf, "(F0.2)") it%value
+                            label_w = hud_text_width(trim(vbuf))
+                            call hud_text_rect(hud, &
+                                sx + MENU_SLIDER_W - label_w - 4.0_c_float, &
+                                row_y + 0.5_c_float * (MENU_ITEM_H - GLYPH_H) - 1.0_c_float, &
+                                label_w + 8.0_c_float, GLYPH_H + 2.0_c_float, &
+                                TEXT_BACKDROP(1), TEXT_BACKDROP(2), TEXT_BACKDROP(3))
                             call hud_text_draw(hud, &
                                 sx + MENU_SLIDER_W - hud_text_width(trim(vbuf)), &
                                 row_y + 0.5_c_float * (MENU_ITEM_H - GLYPH_H), &

@@ -55,3 +55,8 @@ desktop.ini
 # public build. CMake guards the test targets so a fresh clone still
 # configures cleanly without this directory present.
 tests/
+.codex
+.claude/
+PROJECT_MEMORY.md
+SPACE_STATIONS_PLAN.md
+record_demo.sh

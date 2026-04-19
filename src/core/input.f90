@@ -38,7 +38,7 @@ module input_mod
     integer, parameter, public :: KEY_T       = 84
     integer, parameter, public :: KEY_LSHIFT  = 340
     integer, parameter, public :: KEY_RSHIFT  = 344
-    integer, parameter, public :: KEY_ESCAPE  = 256 + 44  ! GLFW_KEY_ESCAPE
+    integer, parameter, public :: KEY_ESCAPE  = 256       ! GLFW_KEY_ESCAPE
     integer, parameter, public :: KEY_TILDE   = 96  ! '`' / '~'
     integer, parameter, public :: KEY_B        = 66
     integer, parameter, public :: KEY_LBRACKET = 91

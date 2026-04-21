@@ -17,13 +17,17 @@ program solarsim
     use input_mod, only: input_state_t, input_init, input_update, input_shutdown, &
                          input_key_callback, input_mouse_button_callback, &
                          input_cursor_pos_callback, input_scroll_callback, &
-                         KEY_SPACE, KEY_0, KEY_EQUALS, KEY_MINUS, KEY_PLUS, &
+                         KEY_SPACE, KEY_C, KEY_0, KEY_EQUALS, KEY_MINUS, KEY_PLUS, &
+                         KEY_M, KEY_N, &
+                         KEY_W, KEY_A, KEY_S, KEY_D, KEY_Q, KEY_E, KEY_F, &
+                         KEY_UP, KEY_DOWN, &
                          KEY_R, KEY_H, KEY_T, KEY_B, KEY_LBRACKET, KEY_RBRACKET, &
                          KEY_ESCAPE, &
                          KEY_F2, KEY_F12
     use config_mod, only: sim_config_t, config_init, config_set_speed_preset, &
                          config_step_speed_preset, config_speed_label, &
-                         SPEED_PRESET_COUNT, EXPOSURE_MIN, EXPOSURE_MAX
+                         SPEED_PRESET_COUNT, EXPOSURE_MIN, EXPOSURE_MAX, &
+                         SPACECRAFT_CAMERA_SYSTEM, SPACECRAFT_CAMERA_FOLLOW
     use config_toml_mod, only: config_toml_load, config_toml_log, config_toml_write_default
     use perf_mod, only: perf_tic, perf_toc, perf_report
     use post_mod, only: post_t, post_init, post_shutdown, post_resize, &
@@ -43,7 +47,7 @@ program solarsim
     use rings_mod, only: rings_t, rings_init, rings_destroy
     use camera_mod, only: camera_t, camera_init, camera_update, camera_get_view, &
                           camera_get_projection, camera_reset, camera_set_focus, &
-                          camera_handle_input
+                          camera_handle_input, camera_move_local
     use demo_mod, only: demo_state_t, demo_overlay_t, demo_init, demo_start, demo_apply, &
                         demo_advance, demo_name, demo_slug, demo_is_showcase, &
                         DEMO_CAPTURE_FPS, DEMO_COUNT, MAX_DEMO_BODIES, DEMO_ID_SHOWCASE
@@ -59,9 +63,28 @@ program solarsim
     use asteroids_mod, only: asteroids_t, asteroids_init, asteroids_shutdown, &
                              asteroids_render
     use display_scale, only: K_LOG
+    use spacecraft_mod, only: spacecraft_system_t, spacecraft_system_init, &
+                              spacecraft_system_sync_config, spacecraft_system_update, &
+                              spacecraft_system_render, spacecraft_system_shutdown, &
+                              spacecraft_system_select, spacecraft_selected_name, &
+                              spacecraft_selected_id, &
+                              spacecraft_count, spacecraft_name_at, spacecraft_franchise_at, &
+                              spacecraft_select_next, spacecraft_select_prev, &
+                              spacecraft_spawn_selected, spacecraft_reset_selected, &
+                              spacecraft_despawn_selected, spacecraft_selected_spawned, &
+                              spacecraft_selected_position_au, spacecraft_selected_has_target, &
+                              spacecraft_control_selected, spacecraft_toggle_auto_stabilize_selected, &
+                              spacecraft_look_selected, &
+                              spacecraft_selected_speed_au, spacecraft_selected_auto_stabilize, &
+                              spacecraft_selected_orientation, spacecraft_selected_follow_tuning, &
+                              spacecraft_set_spawn_preset_selected, spacecraft_selected_spawn_preset
+    use spacecraft_camera_mod, only: spacecraft_camera_state_t, spacecraft_camera_init, &
+                                     spacecraft_camera_selection_changed, spacecraft_camera_toggle_inspect, &
+                                     spacecraft_camera_handle_mouse, spacecraft_camera_apply, &
+                                     spacecraft_camera_exit, spacecraft_camera_inspect_enabled
     use menu_mod, only: menu_t, menu_item_t, menu_init, menu_shutdown, &
                          menu_update, menu_render, menu_mouse_captured, &
-                         menu_pop_action, menu_add_dropdown, menu_add_item, &
+                         menu_pop_action, menu_add_dropdown, menu_add_submenu, menu_add_item, &
                          menu_set_toggle, menu_set_slider, menu_set_label, &
                          menu_get_toggle, menu_get_slider, &
                          ITEM_TOGGLE, ITEM_BUTTON, ITEM_SLIDER, ITEM_SEPARATOR, ITEM_LABEL, &
@@ -80,6 +103,10 @@ program solarsim
     integer, parameter :: FIELD_BLOOM_INT      = 11
     integer, parameter :: FIELD_SPEED_LABEL    = 12
     integer, parameter :: FIELD_SPEED_PRESET   = 13
+    integer, parameter :: FIELD_SPACECRAFT_ENABLED = 20
+    integer, parameter :: FIELD_SPACECRAFT_ACTIVE  = 21
+    integer, parameter :: FIELD_SPACECRAFT_CAMERA  = 22
+    integer, parameter :: FIELD_SPACECRAFT_SPAWN   = 23
     !   Action IDs (button targets) — 100+
     integer, parameter :: ACTION_SCREENSHOT    = 100
     integer, parameter :: ACTION_SCREENSHOT_TS = 101
@@ -90,6 +117,17 @@ program solarsim
     integer, parameter :: ACTION_FOCUS_BASE    = 120   ! 120..128 for Sun..Neptune
     integer, parameter :: ACTION_SPEED_SLOWER  = 130
     integer, parameter :: ACTION_SPEED_FASTER  = 131
+    integer, parameter :: ACTION_SPACECRAFT_SELECT_BASE = 140
+    integer, parameter :: ACTION_SPACECRAFT_SPAWN       = 170
+    integer, parameter :: ACTION_SPACECRAFT_RESET       = 171
+    integer, parameter :: ACTION_SPACECRAFT_DESPAWN     = 172
+    integer, parameter :: ACTION_SPACECRAFT_CAMERA_SYSTEM = 173
+    integer, parameter :: ACTION_SPACECRAFT_CAMERA_FOLLOW = 174
+    integer, parameter :: ACTION_SPACECRAFT_SPAWN_EARTH  = 175
+    integer, parameter :: ACTION_SPACECRAFT_SPAWN_SUN    = 176
+    integer, parameter :: ACTION_SPACECRAFT_SPAWN_FOCUS  = 177
+    integer, parameter :: ACTION_SPACECRAFT_PREV         = 178
+    integer, parameter :: ACTION_SPACECRAFT_NEXT         = 179
 
     ! Physics timestep: 1 hour = 3600 s
     real(real64), parameter :: PHYSICS_DT = 3600.0_real64
@@ -112,6 +150,8 @@ program solarsim
     type(starfield_t)   :: sky
     type(asteroids_t)   :: belt
     type(menu_t)        :: menu
+    type(spacecraft_system_t) :: spacecraft
+    type(spacecraft_camera_state_t) :: ship_cam
     type(demo_state_t)  :: demo
     type(demo_overlay_t):: demo_overlay
     real(real64)        :: accumulator, sim_time, last_frame_time, frame_dt
@@ -128,6 +168,7 @@ program solarsim
     real(real64)        :: au_val
     logical             :: demo_finished
     logical             :: demo_encode_video = .false.
+    logical             :: menu_has_mouse, ship_cam_consumed
     logical             :: saved_hud_visible, saved_trails_visible, saved_bloom_on
     logical             :: saved_distance_log_scale, saved_paused, saved_vsync
     integer             :: saved_speed_preset
@@ -178,10 +219,12 @@ program solarsim
     cam%elevation = real(cfg%camera_elevation, c_float)
     cam%log_dist  = real(cfg%camera_log_dist,  c_float)
     call hud_text_init(hud)
-    call build_menu()
     call input_init(inp)
     call register_input_callbacks()
     call demo_init(demo)
+    call spacecraft_system_init(spacecraft, cfg)
+    call spacecraft_camera_init(ship_cam)
+    call build_menu()
     call post_init(post, win_w, win_h, cfg%bloom_mips)
     call sun_init(sun)
     call starfield_init(sky, cfg%starfield_count)
@@ -289,6 +332,7 @@ program solarsim
         ! Handle input
         !-------------------------------------------------------------------
         call handle_input()
+        call spacecraft_system_sync_config(spacecraft, cfg)
 
         !-------------------------------------------------------------------
         ! Physics step (only if not paused)
@@ -311,6 +355,7 @@ program solarsim
             call interpolate_bodies(bodies_interp, bodies_prev, sim%bodies, alpha)
         end if
         call perf_toc("physics")
+        call spacecraft_system_update(spacecraft, frame_dt, sim_time, bodies_interp)
 
         ! Push current positions to trail ring buffer (every frame)
         call perf_tic("trails_push")
@@ -327,6 +372,7 @@ program solarsim
                          inp%mouse_just_released%left, &
                          inp%mouse%left)
         call dispatch_menu_action()
+        menu_has_mouse = menu_mouse_captured(menu, real(inp%mouse_x, c_float), real(inp%mouse_y, c_float))
 
         !-------------------------------------------------------------------
         ! Update camera
@@ -336,13 +382,21 @@ program solarsim
         else
             demo_overlay%count = 0
         end if
+        ship_cam_consumed = .false.
+        if ((.not. demo%active) .and. (.not. menu_has_mouse) .and. &
+            cfg%spacecraft_camera_mode == SPACECRAFT_CAMERA_FOLLOW .and. &
+            spacecraft_selected_has_target(spacecraft)) then
+            call apply_spacecraft_mouse_camera()
+            ship_cam_consumed = .true.
+        end if
+        call apply_spacecraft_camera(real(frame_dt, c_float))
         call camera_update(cam, real(frame_dt, c_float))
-        if ((.not. demo%active) .and. .not. menu_mouse_captured(menu, &
-                  real(inp%mouse_x, c_float), real(inp%mouse_y, c_float))) then
+        if ((.not. demo%active) .and. (.not. menu_has_mouse) .and. (.not. ship_cam_consumed)) then
             call camera_handle_input(cam, real(inp%mouse_dx, c_float), &
                                      real(inp%mouse_dy, c_float), &
                                      real(inp%scroll_dy, c_float), &
-                                     inp%mouse%left, inp%mouse%right, &
+                                     inp%mouse%left, inp%mouse%middle, &
+                                     inp%mouse%right, &
                                      real(frame_dt, c_float))
         end if
 
@@ -379,6 +433,15 @@ program solarsim
                                   cfg%distance_log_scale, K_LOG)
             call perf_toc("asteroids")
         end block
+        call perf_tic("spacecraft")
+        block
+            real(c_float) :: sun_pos_spacecraft(3)
+            sun_pos_spacecraft(1) = real(bodies_interp(1)%position%x / au_val, c_float)
+            sun_pos_spacecraft(2) = real(bodies_interp(1)%position%y / au_val, c_float)
+            sun_pos_spacecraft(3) = real(bodies_interp(1)%position%z / au_val, c_float)
+            call spacecraft_system_render(spacecraft, cam, sun_pos_spacecraft)
+        end block
+        call perf_toc("spacecraft")
         if (screenshot_focus == -1) then
             ! Only render the huge procedural Sun for the default overview.
             ! Close-up day shots (>= 0) and night-side shots (< -1) skip it.
@@ -456,6 +519,7 @@ program solarsim
     call perf_report()
     call asteroids_shutdown(belt)
     call starfield_shutdown(sky)
+    call spacecraft_system_shutdown(spacecraft)
     call rings_destroy(rings)
     call sun_shutdown(sun)
     call post_shutdown(post)
@@ -490,6 +554,8 @@ contains
     !=====================================================================
     subroutine handle_input()
         integer :: i
+        real(c_float) :: thrust_axis, yaw_axis, pitch_axis, roll_axis
+        real(c_float) :: camera_forward_axis
 
         if (demo%active) then
             if (inp%key_just_pressed(KEY_ESCAPE)) then
@@ -530,6 +596,8 @@ contains
 
         ! Reset camera
         if (inp%key_just_pressed(KEY_R)) then
+            cfg%spacecraft_camera_mode = SPACECRAFT_CAMERA_SYSTEM
+            call exit_spacecraft_follow_camera()
             call camera_reset(cam)
         end if
 
@@ -571,7 +639,75 @@ contains
                 end if
             end if
         end if
+
+        camera_forward_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_W)) - &
+                              merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_S))
+
+        if (cfg%spacecraft_enabled .and. spacecraft_selected_has_target(spacecraft)) then
+            if (inp%key_just_pressed(KEY_N)) then
+                call spacecraft_select_prev(spacecraft)
+                call spacecraft_camera_selection_changed(ship_cam)
+                cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
+                call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+            end if
+            if (inp%key_just_pressed(KEY_M)) then
+                call spacecraft_select_next(spacecraft)
+                call spacecraft_camera_selection_changed(ship_cam)
+                cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
+                call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+            end if
+            if (inp%key_just_pressed(KEY_C) .and. &
+                cfg%spacecraft_camera_mode == SPACECRAFT_CAMERA_FOLLOW) then
+                call spacecraft_camera_toggle_inspect(ship_cam)
+                if (spacecraft_camera_inspect_enabled(ship_cam)) then
+                    call log_msg(LOG_INFO, "Spacecraft inspect camera ON")
+                else
+                    call log_msg(LOG_INFO, "Spacecraft inspect camera OFF")
+                end if
+            end if
+            thrust_axis = camera_forward_axis
+            yaw_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_D)) - &
+                       merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_A))
+            pitch_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_UP)) - &
+                         merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_DOWN))
+            roll_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_E)) - &
+                        merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_Q))
+            if (spacecraft_camera_inspect_enabled(ship_cam)) then
+                thrust_axis = 0.0_c_float
+                yaw_axis = 0.0_c_float
+                pitch_axis = 0.0_c_float
+                roll_axis = 0.0_c_float
+            end if
+            call spacecraft_control_selected(spacecraft, real(frame_dt, c_float), &
+                                             thrust_axis, yaw_axis, pitch_axis, roll_axis)
+            if (inp%key_just_pressed(KEY_F)) then
+                call spacecraft_toggle_auto_stabilize_selected(spacecraft)
+                cfg%spacecraft_auto_stabilize = spacecraft_selected_auto_stabilize(spacecraft)
+                if (cfg%spacecraft_auto_stabilize) then
+                    call log_msg(LOG_INFO, "Spacecraft auto-stabilize ON")
+                else
+                    call log_msg(LOG_INFO, "Spacecraft auto-stabilize OFF")
+                end if
+            end if
+        else if (abs(camera_forward_axis) > 0.0_c_float) then
+            call camera_move_local(cam, camera_forward_axis, 0.0_c_float, 0.0_c_float, &
+                                   real(frame_dt, c_float))
+        end if
     end subroutine handle_input
+
+    subroutine apply_spacecraft_mouse_camera()
+        real(c_float) :: yaw_delta, pitch_delta
+
+        call spacecraft_camera_handle_mouse(ship_cam, real(inp%mouse_dx, c_float), &
+                                            real(inp%mouse_dy, c_float), &
+                                            real(inp%scroll_dy, c_float), &
+                                            inp%mouse%left, inp%mouse%middle, &
+                                            yaw_delta, pitch_delta)
+        if ((abs(yaw_delta) > 0.0_c_float .or. abs(pitch_delta) > 0.0_c_float) .and. &
+            (.not. spacecraft_camera_inspect_enabled(ship_cam))) then
+            call spacecraft_look_selected(spacecraft, yaw_delta, pitch_delta)
+        end if
+    end subroutine apply_spacecraft_mouse_camera
 
     subroutine set_speed_preset(new_idx)
         integer, intent(in) :: new_idx
@@ -704,12 +840,18 @@ contains
         integer, intent(in) :: idx
         real(c_float) :: pos_au(3)
 
+        cfg%spacecraft_camera_mode = SPACECRAFT_CAMERA_SYSTEM
+        call exit_spacecraft_follow_camera()
         au_val = AU
         pos_au(1) = real(sim%bodies(idx+1)%position%x / au_val, c_float)
         pos_au(2) = real(sim%bodies(idx+1)%position%y / au_val, c_float)
         pos_au(3) = real(sim%bodies(idx+1)%position%z / au_val, c_float)
         call camera_set_focus(cam, pos_au)
     end subroutine focus_on_body
+
+    subroutine exit_spacecraft_follow_camera()
+        call spacecraft_camera_exit(ship_cam, cam)
+    end subroutine exit_spacecraft_follow_camera
 
     !=====================================================================
     ! Render HUD overlay + top-bar menu. The menu always shows; the HUD
@@ -766,6 +908,28 @@ contains
             else
                 call hud_text_draw(hud, 10.0_c_float, y0 + 75.0_c_float, "Bloom: OFF", &
                                    0.7_c_float, 0.7_c_float, 0.7_c_float)
+            end if
+
+            if (cfg%spacecraft_enabled .and. spacecraft_selected_has_target(spacecraft)) then
+                call hud_text_draw(hud, 10.0_c_float, y0 + 90.0_c_float, &
+                                   "Ship: " // trim(spacecraft_selected_name(spacecraft)), &
+                                   0.8_c_float, 0.95_c_float, 1.0_c_float)
+                write(ts_str, "(A,F7.4,' AU/s')") "Ship Speed: ", spacecraft_selected_speed_au(spacecraft)
+                call hud_text_draw(hud, 10.0_c_float, y0 + 105.0_c_float, trim(ts_str), &
+                                   0.8_c_float, 0.95_c_float, 1.0_c_float)
+                call hud_text_draw(hud, 10.0_c_float, y0 + 120.0_c_float, &
+                                   "Ship Cam: " // trim(spacecraft_camera_mode_label()), &
+                                   0.8_c_float, 0.95_c_float, 1.0_c_float)
+                if (spacecraft_selected_auto_stabilize(spacecraft)) then
+                    pause_str = "Auto-Stabilize: ON"
+                else
+                    pause_str = "Auto-Stabilize: OFF"
+                end if
+                call hud_text_draw(hud, 10.0_c_float, y0 + 135.0_c_float, trim(pause_str), &
+                                   0.8_c_float, 0.95_c_float, 1.0_c_float)
+                call hud_text_draw(hud, 10.0_c_float, y0 + 150.0_c_float, &
+                                   "W/S thrust  A/D yaw  Arrows pitch  Q/E roll  F stabilize  N/M ship", &
+                                   0.7_c_float, 0.9_c_float, 0.9_c_float)
             end if
         end if
 
@@ -1094,10 +1258,12 @@ contains
     ! menu_pop_action.
     !=====================================================================
     subroutine build_menu()
-        integer :: d_file, d_view, d_camera, d_render, d_demos, i
+        integer :: d_file, d_view, d_camera, d_render, d_demos, d_spacecraft, i
+        integer :: d_spacecraft_real, d_spacecraft_trek
         type(menu_item_t) :: it
+        integer :: real_count, trek_count
 
-        call menu_init(menu, 5)
+        call menu_init(menu, 12)
 
         !-- File -----------------------------------------------------
         call menu_add_dropdown(menu, "File", 5, d_file)
@@ -1208,6 +1374,85 @@ contains
         it%slider_max = real(SPEED_PRESET_COUNT, c_float)
         it%value = real(cfg%speed_preset, c_float)
         call menu_add_item(menu, d_render, it)
+
+        !-- Spacecraft -----------------------------------------------
+        real_count = spacecraft_count_by_franchise("NASA")
+        trek_count = spacecraft_count_by_franchise("Star Trek")
+        call menu_add_dropdown(menu, "Spacecraft", 28 + spacecraft_count(spacecraft), d_spacecraft)
+        it = blank_item()
+        it%kind = ITEM_TOGGLE; it%label = "Enable Spacecraft"
+        it%field_id = FIELD_SPACECRAFT_ENABLED; it%bool_value = cfg%spacecraft_enabled
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item()
+        it%kind = ITEM_LABEL; it%label = "Active: " // trim(spacecraft_selected_name(spacecraft))
+        it%field_id = FIELD_SPACECRAFT_ACTIVE
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item()
+        it%kind = ITEM_LABEL; it%label = "Camera: " // trim(spacecraft_camera_mode_label())
+        it%field_id = FIELD_SPACECRAFT_CAMERA
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item()
+        it%kind = ITEM_LABEL; it%label = "Spawn: " // trim(spacecraft_spawn_mode_label())
+        it%field_id = FIELD_SPACECRAFT_SPAWN
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_SEPARATOR
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Previous Ship (N)"
+        it%action_id = ACTION_SPACECRAFT_PREV
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Next Ship (M)"
+        it%action_id = ACTION_SPACECRAFT_NEXT
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_SEPARATOR
+        call menu_add_item(menu, d_spacecraft, it)
+        if (real_count > 0) call menu_add_submenu(menu, d_spacecraft, "Real", real_count, d_spacecraft_real)
+        do i = 1, spacecraft_count(spacecraft)
+            if (trim(spacecraft_franchise_at(spacecraft, i)) /= "NASA") cycle
+            it = blank_item()
+            it%kind = ITEM_BUTTON
+            it%label = "Select: " // trim(spacecraft_name_at(spacecraft, i))
+            it%action_id = ACTION_SPACECRAFT_SELECT_BASE + (i - 1)
+            call menu_add_item(menu, d_spacecraft_real, it)
+        end do
+        if (trek_count > 0) call menu_add_submenu(menu, d_spacecraft, "Trek", trek_count, d_spacecraft_trek)
+        do i = 1, spacecraft_count(spacecraft)
+            if (trim(spacecraft_franchise_at(spacecraft, i)) /= "Star Trek") cycle
+            it = blank_item()
+            it%kind = ITEM_BUTTON
+            it%label = "Select: " // trim(spacecraft_name_at(spacecraft, i))
+            it%action_id = ACTION_SPACECRAFT_SELECT_BASE + (i - 1)
+            call menu_add_item(menu, d_spacecraft_trek, it)
+        end do
+        it = blank_item(); it%kind = ITEM_SEPARATOR
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Spawn Active"
+        it%action_id = ACTION_SPACECRAFT_SPAWN
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Reset Active"
+        it%action_id = ACTION_SPACECRAFT_RESET
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Despawn Active"
+        it%action_id = ACTION_SPACECRAFT_DESPAWN
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_SEPARATOR
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Spawn Mode: Earth"
+        it%action_id = ACTION_SPACECRAFT_SPAWN_EARTH
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Spawn Mode: Sun"
+        it%action_id = ACTION_SPACECRAFT_SPAWN_SUN
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Spawn Mode: Current Focus"
+        it%action_id = ACTION_SPACECRAFT_SPAWN_FOCUS
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_SEPARATOR
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Camera: System"
+        it%action_id = ACTION_SPACECRAFT_CAMERA_SYSTEM
+        call menu_add_item(menu, d_spacecraft, it)
+        it = blank_item(); it%kind = ITEM_BUTTON; it%label = "Camera: Follow"
+        it%action_id = ACTION_SPACECRAFT_CAMERA_FOLLOW
+        call menu_add_item(menu, d_spacecraft, it)
     end subroutine build_menu
 
     pure function blank_item() result(it)
@@ -1238,6 +1483,10 @@ contains
         call menu_set_slider(menu, FIELD_BLOOM_INT,     real(cfg%bloom_intensity, c_float))
         call menu_set_label(menu, FIELD_SPEED_LABEL, "Speed: " // trim(config_speed_label(cfg)))
         call menu_set_slider(menu, FIELD_SPEED_PRESET, real(cfg%speed_preset, c_float))
+        call menu_set_toggle(menu, FIELD_SPACECRAFT_ENABLED, cfg%spacecraft_enabled)
+        call menu_set_label(menu, FIELD_SPACECRAFT_ACTIVE, spacecraft_active_label())
+        call menu_set_label(menu, FIELD_SPACECRAFT_CAMERA, "Camera: " // trim(spacecraft_camera_mode_label()))
+        call menu_set_label(menu, FIELD_SPACECRAFT_SPAWN, "Spawn: " // trim(spacecraft_spawn_mode_label()))
     end subroutine sync_menu_from_cfg
 
     !=====================================================================
@@ -1268,6 +1517,8 @@ contains
                 cfg%paused = menu_get_toggle(menu, FIELD_PAUSED)
             case (FIELD_LOG_SCALE)
                 cfg%distance_log_scale = menu_get_toggle(menu, FIELD_LOG_SCALE)
+            case (FIELD_SPACECRAFT_ENABLED)
+                cfg%spacecraft_enabled = menu_get_toggle(menu, FIELD_SPACECRAFT_ENABLED)
             end select
             return
         end if
@@ -1296,12 +1547,52 @@ contains
         case (ACTION_QUIT)
             running = .false.
         case (ACTION_CAMERA_RESET)
+            cfg%spacecraft_camera_mode = SPACECRAFT_CAMERA_SYSTEM
+            call exit_spacecraft_follow_camera()
             call camera_reset(cam)
         case (ACTION_SPEED_SLOWER)
             call step_speed_preset(-1)
         case (ACTION_SPEED_FASTER)
             call step_speed_preset(1)
+        case (ACTION_SPACECRAFT_SPAWN)
+            call spacecraft_spawn_selected(spacecraft, cfg%focus_index)
+        case (ACTION_SPACECRAFT_RESET)
+            call spacecraft_reset_selected(spacecraft, cfg%focus_index)
+        case (ACTION_SPACECRAFT_DESPAWN)
+            call spacecraft_despawn_selected(spacecraft)
+        case (ACTION_SPACECRAFT_CAMERA_SYSTEM)
+            cfg%spacecraft_camera_mode = SPACECRAFT_CAMERA_SYSTEM
+            call exit_spacecraft_follow_camera()
+        case (ACTION_SPACECRAFT_CAMERA_FOLLOW)
+            cfg%spacecraft_camera_mode = SPACECRAFT_CAMERA_FOLLOW
+        case (ACTION_SPACECRAFT_SPAWN_EARTH)
+            cfg%spacecraft_spawn_preset = "earth"
+            call spacecraft_set_spawn_preset_selected(spacecraft, cfg%spacecraft_spawn_preset)
+        case (ACTION_SPACECRAFT_SPAWN_SUN)
+            cfg%spacecraft_spawn_preset = "sun"
+            call spacecraft_set_spawn_preset_selected(spacecraft, cfg%spacecraft_spawn_preset)
+        case (ACTION_SPACECRAFT_SPAWN_FOCUS)
+            cfg%spacecraft_spawn_preset = "focus"
+            call spacecraft_set_spawn_preset_selected(spacecraft, cfg%spacecraft_spawn_preset)
+        case (ACTION_SPACECRAFT_PREV)
+            call spacecraft_select_prev(spacecraft)
+            call spacecraft_camera_selection_changed(ship_cam)
+            cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
+            call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+        case (ACTION_SPACECRAFT_NEXT)
+            call spacecraft_select_next(spacecraft)
+            call spacecraft_camera_selection_changed(ship_cam)
+            cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
+            call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
         case default
+            if (act >= ACTION_SPACECRAFT_SELECT_BASE .and. &
+                act < ACTION_SPACECRAFT_SELECT_BASE + spacecraft_count(spacecraft)) then
+                call spacecraft_system_select(spacecraft, act - ACTION_SPACECRAFT_SELECT_BASE + 1)
+                call spacecraft_camera_selection_changed(ship_cam)
+                cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
+                call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+                return
+            end if
             if (act >= ACTION_DEMO_BASE .and. act < ACTION_DEMO_BASE + DEMO_COUNT) then
                 call start_demo_mode(act - ACTION_DEMO_BASE + 1, .false., .false.)
                 return
@@ -1316,6 +1607,72 @@ contains
             end if
         end select
     end subroutine dispatch_menu_action
+
+    function spacecraft_camera_mode_label() result(label)
+        character(len=32) :: label
+        select case (cfg%spacecraft_camera_mode)
+        case (SPACECRAFT_CAMERA_FOLLOW)
+            if (spacecraft_camera_inspect_enabled(ship_cam)) then
+                label = "Inspect"
+            else
+                label = "Follow"
+            end if
+        case default
+            label = "System"
+        end select
+    end function spacecraft_camera_mode_label
+
+    function spacecraft_spawn_mode_label() result(label)
+        character(len=32) :: label
+
+        select case (trim(spacecraft_selected_spawn_preset(spacecraft)))
+        case ("sun")
+            label = "Sun"
+        case ("focus")
+            label = "Current Focus"
+        case default
+            label = "Earth"
+        end select
+    end function spacecraft_spawn_mode_label
+
+    function spacecraft_active_label() result(label)
+        character(len=64) :: label
+        character(len=64) :: name
+        name = spacecraft_selected_name(spacecraft)
+        if (len_trim(name) == 0) name = "None"
+        if (spacecraft_selected_spawned(spacecraft)) then
+            label = "Active: " // trim(name)
+        else
+            label = "Active: " // trim(name) // " [parked]"
+        end if
+    end function spacecraft_active_label
+
+    integer function spacecraft_count_by_franchise(franchise) result(n)
+        character(len=*), intent(in) :: franchise
+        integer :: i
+
+        n = 0
+        do i = 1, spacecraft_count(spacecraft)
+            if (trim(spacecraft_franchise_at(spacecraft, i)) == trim(franchise)) n = n + 1
+        end do
+    end function spacecraft_count_by_franchise
+
+    subroutine apply_spacecraft_camera(dt)
+        real(c_float), intent(in) :: dt
+        real(c_float) :: target(3)
+        real(c_float) :: yaw, pitch, roll
+        real(c_float) :: dist, height
+
+        if (cfg%spacecraft_camera_mode == SPACECRAFT_CAMERA_FOLLOW .and. &
+            spacecraft_selected_has_target(spacecraft)) then
+            target = spacecraft_selected_position_au(spacecraft)
+            call spacecraft_selected_orientation(spacecraft, yaw, pitch, roll)
+            call spacecraft_selected_follow_tuning(spacecraft, dist, height)
+            call spacecraft_camera_apply(ship_cam, cam, target, yaw, pitch, dist, height, dt)
+        else
+            call exit_spacecraft_follow_camera()
+        end if
+    end subroutine apply_spacecraft_camera
 
     !=====================================================================
     ! Seed trail buffers with current body positions

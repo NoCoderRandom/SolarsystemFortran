@@ -96,6 +96,19 @@ set(UI_SOURCES
 )
 
 # ---------------------------------------------------------------------------
+# Spacecraft sources (framework seam; disabled by config by default)
+# ---------------------------------------------------------------------------
+set(SPACECRAFT_SOURCES
+    src/render/spacecraft_renderer.f90
+    src/spacecraft/spacecraft_catalog.f90
+    src/spacecraft/spacecraft_camera.f90
+    src/spacecraft/spacecraft_types.f90
+    src/spacecraft/spacecraft_materials.f90
+    src/spacecraft/spacecraft_assets.f90
+    src/spacecraft/spacecraft_system.f90
+)
+
+# ---------------------------------------------------------------------------
 # Target: solarsim
 # ---------------------------------------------------------------------------
 add_executable(solarsim
@@ -104,6 +117,7 @@ add_executable(solarsim
     ${PHYSICS_SOURCES}
     ${RENDER_SOURCES}
     ${UI_SOURCES}
+    ${SPACECRAFT_SOURCES}
     ${GLAD_SOURCES}
     ${STB_SOURCES}
 )
@@ -129,10 +143,8 @@ set_target_properties(solarsim PROPERTIES
 # local-only; the main binary never depends on them.
 # ---------------------------------------------------------------------------
 set(SOLARSIM_HAS_TESTS FALSE)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_physics.f90"
-   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_date_utils.f90")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_physics.f90")
     set(SOLARSIM_HAS_TESTS TRUE)
-
     add_executable(test_physics
         tests/test_physics.f90
         src/core/logging.f90
@@ -144,13 +156,57 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_physics.f90"
         src/physics/simulation.f90
     )
     set_target_properties(test_physics PROPERTIES Fortran_STANDARD 2018)
+endif()
 
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_date_utils.f90")
+    set(SOLARSIM_HAS_TESTS TRUE)
     add_executable(test_date_utils
         tests/test_date_utils.f90
         src/core/constants.f90
         src/core/date_utils.f90
     )
     set_target_properties(test_date_utils PROPERTIES Fortran_STANDARD 2018)
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_spacecraft_controls.f90")
+    set(SOLARSIM_HAS_TESTS TRUE)
+    add_executable(test_spacecraft_controls
+        tests/test_spacecraft_controls.f90
+        src/core/logging.f90
+        src/core/constants.f90
+        src/core/vector3d.f90
+        src/core/input.f90
+        src/core/config.f90
+        src/core/config_toml.f90
+        src/physics/body.f90
+        src/render/gl_bindings.f90
+        src/render/mat4.f90
+        src/render/mesh.f90
+        src/render/shader.f90
+        src/render/texture.f90
+        src/render/material.f90
+        src/render/camera.f90
+        src/render/spacecraft_renderer.f90
+        src/spacecraft/spacecraft_catalog.f90
+        src/spacecraft/spacecraft_types.f90
+        src/spacecraft/spacecraft_materials.f90
+        src/spacecraft/spacecraft_assets.f90
+        src/spacecraft/spacecraft_system.f90
+        ${GLAD_SOURCES}
+        ${STB_SOURCES}
+    )
+    target_include_directories(test_spacecraft_controls PRIVATE
+        ${GLAD_INCLUDE_DIR}
+        ${STB_INCLUDE_DIR}
+    )
+    target_link_libraries(test_spacecraft_controls PRIVATE
+        glfw
+        ${CMAKE_DL_LIBS}
+    )
+    set_target_properties(test_spacecraft_controls PROPERTIES
+        C_STANDARD 11
+        Fortran_STANDARD 2018
+    )
 endif()
 
 # ---------------------------------------------------------------------------
@@ -184,8 +240,15 @@ file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/screenshots)
 # ---------------------------------------------------------------------------
 enable_testing()
 if(SOLARSIM_HAS_TESTS)
-    add_test(NAME test_physics    COMMAND test_physics)
-    add_test(NAME test_date_utils COMMAND test_date_utils)
+    if(TARGET test_physics)
+        add_test(NAME test_physics COMMAND test_physics)
+    endif()
+    if(TARGET test_date_utils)
+        add_test(NAME test_date_utils COMMAND test_date_utils)
+    endif()
+    if(TARGET test_spacecraft_controls)
+        add_test(NAME test_spacecraft_controls COMMAND test_spacecraft_controls)
+    endif()
 endif()
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")

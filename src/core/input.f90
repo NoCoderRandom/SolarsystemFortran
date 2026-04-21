@@ -19,6 +19,7 @@ module input_mod
     ! Key identifiers we care about (subset — extend as needed)
     !-----------------------------------------------------------------------
     integer, parameter, public :: KEY_SPACE   = 32
+    integer, parameter, public :: KEY_C       = 67
     integer, parameter, public :: KEY_0       = 48
     integer, parameter, public :: KEY_1       = 49
     integer, parameter, public :: KEY_2       = 50
@@ -34,11 +35,24 @@ module input_mod
     integer, parameter, public :: KEY_COMMA   = 44   ! ','  (slow down — fine)
     integer, parameter, public :: KEY_PERIOD  = 46   ! '.'  (speed up  — fine)
     integer, parameter, public :: KEY_R       = 82
+    integer, parameter, public :: KEY_W       = 87
+    integer, parameter, public :: KEY_A       = 65
+    integer, parameter, public :: KEY_S       = 83
+    integer, parameter, public :: KEY_D       = 68
+    integer, parameter, public :: KEY_Q       = 81
+    integer, parameter, public :: KEY_E       = 69
+    integer, parameter, public :: KEY_F       = 70
     integer, parameter, public :: KEY_H       = 72
+    integer, parameter, public :: KEY_M       = 77
+    integer, parameter, public :: KEY_N       = 78
     integer, parameter, public :: KEY_T       = 84
     integer, parameter, public :: KEY_LSHIFT  = 340
     integer, parameter, public :: KEY_RSHIFT  = 344
     integer, parameter, public :: KEY_ESCAPE  = 256       ! GLFW_KEY_ESCAPE
+    integer, parameter, public :: KEY_UP      = 265
+    integer, parameter, public :: KEY_DOWN    = 264
+    integer, parameter, public :: KEY_LEFT    = 263
+    integer, parameter, public :: KEY_RIGHT   = 262
     integer, parameter, public :: KEY_TILDE   = 96  ! '`' / '~'
     integer, parameter, public :: KEY_B        = 66
     integer, parameter, public :: KEY_LBRACKET = 91

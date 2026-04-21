@@ -12,6 +12,7 @@ module config_mod
     public :: sim_config_t, config_init, config_set_time_scale
     public :: config_set_speed_preset, config_step_speed_preset, &
               config_nearest_speed_preset, config_speed_label
+    public :: SPACECRAFT_CAMERA_SYSTEM, SPACECRAFT_CAMERA_FOLLOW
 
     ! Time scale bounds (simulated seconds per real second)
     integer, parameter, public :: SPEED_PRESET_COUNT = 16
@@ -27,6 +28,8 @@ module config_mod
 
     ! Body focus indices: 0=Sun, 1=Mercury, ..., 8=Neptune
     integer, parameter, public :: FOCUS_NONE = -1
+    integer, parameter :: SPACECRAFT_CAMERA_SYSTEM = 0
+    integer, parameter :: SPACECRAFT_CAMERA_FOLLOW = 1
 
     ! HDR/bloom defaults
     real, parameter, public :: BLOOM_THRESHOLD_DEFAULT = 1.0
@@ -85,6 +88,13 @@ module config_mod
         logical :: load_earth_normal    = .true.
         logical :: load_earth_specular  = .true.
         logical :: load_saturn_rings    = .true.
+
+        ! Spacecraft framework — disabled by default until feature phases land.
+        logical :: spacecraft_enabled = .false.
+        integer :: spacecraft_camera_mode = SPACECRAFT_CAMERA_SYSTEM
+        logical :: spacecraft_auto_stabilize = .true.
+        character(len=64) :: spacecraft_default_id = "voyager1"
+        character(len=32) :: spacecraft_spawn_preset = "earth"
 
         character(len=32) :: focus_names(9) = [ &
             "Sun       ", "Mercury   ", "Venus     ", "Earth     ", &

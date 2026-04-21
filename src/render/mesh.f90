@@ -16,7 +16,7 @@ module mesh_mod
     implicit none
     private
 
-    public :: mesh_t, mesh_create_sphere, mesh_destroy
+    public :: mesh_t, mesh_create_sphere, mesh_create_indexed, mesh_destroy
 
     type, public :: mesh_t
         integer(c_int) :: vao    = 0_c_int
@@ -27,6 +27,72 @@ module mesh_mod
     end type mesh_t
 
 contains
+
+    subroutine mesh_create_indexed(mesh, vertices, indices)
+        type(mesh_t), intent(out) :: mesh
+        real(c_float), intent(in), target :: vertices(:)
+        integer(c_int), intent(in), target :: indices(:)
+
+        integer, parameter :: FLOATS_PER_VERT = 14
+        integer, parameter :: STRIDE_BYTES    = FLOATS_PER_VERT * 4
+        integer(c_int) :: vbo(1), ebo(1), vao(1)
+        integer :: n_vertices, n_indices
+
+        if (mod(size(vertices), FLOATS_PER_VERT) /= 0) then
+            mesh%valid = .false.
+            call log_msg(LOG_DEBUG, "mesh_create_indexed: invalid vertex stride")
+            return
+        end if
+
+        n_vertices = size(vertices) / FLOATS_PER_VERT
+        n_indices = size(indices)
+        if (n_vertices <= 0 .or. n_indices <= 0) then
+            mesh%valid = .false.
+            call log_msg(LOG_DEBUG, "mesh_create_indexed: empty mesh")
+            return
+        end if
+
+        call gl_gen_vertex_arrays(1, vao)
+        call gl_bind_vertex_array(vao(1))
+
+        call gl_gen_buffers(1, vbo)
+        call gl_bind_buffer(GL_ARRAY_BUFFER, vbo(1))
+        call gl_buffer_data(GL_ARRAY_BUFFER, &
+                            int(STRIDE_BYTES * n_vertices, c_int), &
+                            c_loc(vertices(1)), GL_STATIC_DRAW)
+
+        call gl_gen_buffers(1, ebo)
+        call gl_bind_buffer(GL_ELEMENT_ARRAY_BUFFER, ebo(1))
+        call gl_buffer_data(GL_ELEMENT_ARRAY_BUFFER, &
+                            int(4_c_int * n_indices, c_int), &
+                            c_loc(indices(1)), GL_STATIC_DRAW)
+
+        call gl_enable_vertex_attrib_array(0)
+        call gl_vertex_attrib_pointer(0, 3, GL_FLOAT, .false., STRIDE_BYTES, c_null_ptr)
+
+        call gl_enable_vertex_attrib_array(1)
+        call gl_vertex_attrib_pointer_offset(1, 2, GL_FLOAT, .false., STRIDE_BYTES, 12)
+
+        call gl_enable_vertex_attrib_array(7)
+        call gl_vertex_attrib_pointer_offset(7, 3, GL_FLOAT, .false., STRIDE_BYTES, 20)
+        call gl_enable_vertex_attrib_array(8)
+        call gl_vertex_attrib_pointer_offset(8, 3, GL_FLOAT, .false., STRIDE_BYTES, 32)
+        call gl_enable_vertex_attrib_array(9)
+        call gl_vertex_attrib_pointer_offset(9, 3, GL_FLOAT, .false., STRIDE_BYTES, 44)
+
+        call gl_bind_vertex_array(0_c_int)
+        call gl_bind_buffer(GL_ARRAY_BUFFER, 0_c_int)
+        call gl_bind_buffer(GL_ELEMENT_ARRAY_BUFFER, 0_c_int)
+
+        mesh%vao   = vao(1)
+        mesh%vbo   = vbo(1)
+        mesh%ebo   = ebo(1)
+        mesh%n_idx = int(n_indices, c_int)
+        mesh%valid = .true.
+
+        call log_msg(LOG_DEBUG, "Indexed mesh: " // trim(itoa(n_vertices)) // &
+                     " vertices, " // trim(itoa(n_indices)) // " indices")
+    end subroutine mesh_create_indexed
 
     subroutine mesh_create_sphere(mesh, lat_segments, lon_segments)
         type(mesh_t), intent(out) :: mesh

@@ -126,6 +126,13 @@ contains
         write(unit, '(A,L1)') "earth_normal   = ", cfg%load_earth_normal
         write(unit, '(A,L1)') "earth_specular = ", cfg%load_earth_specular
         write(unit, '(A,L1)') "saturn_rings   = ", cfg%load_saturn_rings
+        write(unit, '(A)') ""
+        write(unit, '(A)') "[spacecraft]"
+        write(unit, '(A,L1)') "enabled = ", cfg%spacecraft_enabled
+        write(unit, '(A,I0)') "camera_mode = ", cfg%spacecraft_camera_mode
+        write(unit, '(A,L1)') "auto_stabilize = ", cfg%spacecraft_auto_stabilize
+        write(unit, '(A,A,A)') 'default_id = "', trim(cfg%spacecraft_default_id), '"'
+        write(unit, '(A,A,A)') 'spawn_preset = "', trim(cfg%spacecraft_spawn_preset), '"'
         close(unit)
     end subroutine config_toml_write_default
 
@@ -151,6 +158,16 @@ contains
         call log_msg(LOG_INFO, trim(buf))
         write(buf, '(A,I0,A,I0)') "starfield=", cfg%starfield_count, &
             " asteroids=", cfg%asteroid_count
+        call log_msg(LOG_INFO, trim(buf))
+        write(buf, '(A,L1)') "spacecraft: enabled=", cfg%spacecraft_enabled
+        call log_msg(LOG_INFO, trim(buf))
+        write(buf, '(A,I0)') "spacecraft camera mode=", cfg%spacecraft_camera_mode
+        call log_msg(LOG_INFO, trim(buf))
+        write(buf, '(A,L1)') "spacecraft auto-stabilize=", cfg%spacecraft_auto_stabilize
+        call log_msg(LOG_INFO, trim(buf))
+        write(buf, '(A,A)') "spacecraft default id=", trim(cfg%spacecraft_default_id)
+        call log_msg(LOG_INFO, trim(buf))
+        write(buf, '(A,A)') "spacecraft spawn preset=", trim(cfg%spacecraft_spawn_preset)
         call log_msg(LOG_INFO, trim(buf))
     end subroutine config_toml_log
 
@@ -271,6 +288,14 @@ contains
             case ("earth_specular"); cfg%load_earth_specular = parse_bool(value); handled = .true.
             case ("saturn_rings");   cfg%load_saturn_rings   = parse_bool(value); handled = .true.
             end select
+        case ("spacecraft")
+            select case (key)
+            case ("enabled"); cfg%spacecraft_enabled = parse_bool(value); handled = .true.
+            case ("camera_mode"); read(value, *, iostat=iostat) cfg%spacecraft_camera_mode; handled = .true.
+            case ("auto_stabilize"); cfg%spacecraft_auto_stabilize = parse_bool(value); handled = .true.
+            case ("default_id"); cfg%spacecraft_default_id = parse_string(value); handled = .true.
+            case ("spawn_preset"); cfg%spacecraft_spawn_preset = parse_string32(value); handled = .true.
+            end select
         end select
 
         if (.not. handled) then
@@ -294,6 +319,34 @@ contains
         case default; b = .false.
         end select
     end function parse_bool
+
+    pure function parse_string(v) result(out)
+        character(len=*), intent(in) :: v
+        character(len=64) :: out
+        integer :: n
+
+        out = ""
+        n = len_trim(v)
+        if (n >= 2 .and. v(1:1) == '"' .and. v(n:n) == '"') then
+            out = v(2:n-1)
+        else
+            out = trim(v)
+        end if
+    end function parse_string
+
+    pure function parse_string32(v) result(out)
+        character(len=*), intent(in) :: v
+        character(len=32) :: out
+        integer :: n
+
+        out = ""
+        n = len_trim(v)
+        if (n >= 2 .and. v(1:1) == '"' .and. v(n:n) == '"') then
+            out = v(2:n-1)
+        else
+            out = trim(v)
+        end if
+    end function parse_string32
 
     pure function lower(c) result(lc)
         character(len=1), intent(in) :: c

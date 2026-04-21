@@ -1,0 +1,2 @@
+newmtl probe_mat
+map_Kd textures/diffuse.ppm

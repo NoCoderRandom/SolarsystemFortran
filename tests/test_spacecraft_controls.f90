@@ -10,6 +10,7 @@ program test_spacecraft_controls
 
     call test_thrust_accumulates_velocity()
     call test_sync_config_does_not_rearm_anchor_every_frame()
+    call test_sync_config_does_not_respawn_despawned_ship()
     print *, "test_spacecraft_controls: OK"
 
 contains
@@ -46,6 +47,28 @@ contains
 
         deallocate(sys%craft)
     end subroutine test_sync_config_does_not_rearm_anchor_every_frame
+
+    subroutine test_sync_config_does_not_respawn_despawned_ship()
+        cfg%spacecraft_enabled = .true.
+        cfg%spacecraft_auto_stabilize = .true.
+        cfg%spacecraft_spawn_preset = "earth"
+
+        sys%initialized = .true.
+        sys%enabled = .true.
+        allocate(sys%craft(1))
+        sys%selected_index = 1
+        sys%craft(1)%active = .false.
+        sys%craft(1)%pending_anchor_reset = .false.
+        sys%craft(1)%def%spawn_preset = "earth"
+
+        call spacecraft_system_sync_config(sys, cfg)
+        call assert_false(sys%craft(1)%active, &
+                          "config sync should not respawn a ship the user despawned")
+        call assert_false(sys%craft(1)%pending_anchor_reset, &
+                          "config sync should not queue anchor reset for a despawned ship")
+
+        deallocate(sys%craft)
+    end subroutine test_sync_config_does_not_respawn_despawned_ship
 
     subroutine assert_true(condition, message)
         logical, intent(in) :: condition

@@ -24,6 +24,7 @@ module spacecraft_mod
     public :: spacecraft_selected_name, spacecraft_selected_id
     public :: spacecraft_count, spacecraft_name_at
     public :: spacecraft_franchise_at
+    public :: spacecraft_selected_available
     public :: spacecraft_select_next, spacecraft_select_prev
     public :: spacecraft_spawn_selected, spacecraft_reset_selected
     public :: spacecraft_despawn_selected, spacecraft_selected_spawned
@@ -76,8 +77,8 @@ contains
         was_enabled = sys%enabled
         sys%enabled = cfg%spacecraft_enabled
         call apply_cfg_defaults(sys, cfg)
-        call activate_selected_if_enabled(sys)
         if (sys%enabled .neqv. was_enabled) then
+            if (sys%enabled) call activate_selected_if_enabled(sys)
             call sync_selected_model(sys)
         end if
     end subroutine spacecraft_system_sync_config
@@ -165,6 +166,15 @@ contains
         if (sys%selected_index < 1 .or. sys%selected_index > size(sys%craft)) return
         id = sys%craft(sys%selected_index)%def%id
     end function spacecraft_selected_id
+
+    logical function spacecraft_selected_available(sys) result(v)
+        type(spacecraft_system_t), intent(in) :: sys
+
+        v = .false.
+        if (.not. allocated(sys%craft)) return
+        if (sys%selected_index < 1 .or. sys%selected_index > size(sys%craft)) return
+        v = .true.
+    end function spacecraft_selected_available
 
     integer function spacecraft_count(sys) result(n)
         type(spacecraft_system_t), intent(in) :: sys

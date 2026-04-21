@@ -135,6 +135,7 @@ target_link_libraries(solarsim PRIVATE
 set_target_properties(solarsim PROPERTIES
     C_STANDARD 11
     Fortran_STANDARD 2018
+    Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod/solarsim
 )
 
 # ---------------------------------------------------------------------------
@@ -155,7 +156,10 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_physics.f90")
         src/physics/integrator.f90
         src/physics/simulation.f90
     )
-    set_target_properties(test_physics PROPERTIES Fortran_STANDARD 2018)
+    set_target_properties(test_physics PROPERTIES
+        Fortran_STANDARD 2018
+        Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod/test_physics
+    )
 endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_date_utils.f90")
@@ -165,7 +169,10 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_date_utils.f90")
         src/core/constants.f90
         src/core/date_utils.f90
     )
-    set_target_properties(test_date_utils PROPERTIES Fortran_STANDARD 2018)
+    set_target_properties(test_date_utils PROPERTIES
+        Fortran_STANDARD 2018
+        Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod/test_date_utils
+    )
 endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_spacecraft_controls.f90")
@@ -206,6 +213,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_spacecraft_controls.f90")
     set_target_properties(test_spacecraft_controls PROPERTIES
         C_STANDARD 11
         Fortran_STANDARD 2018
+        Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod/test_spacecraft_controls
     )
 endif()
 

@@ -11,7 +11,8 @@ module config_mod
 
     public :: sim_config_t, config_init, config_set_time_scale
     public :: config_set_speed_preset, config_step_speed_preset, &
-              config_nearest_speed_preset, config_speed_label
+              config_nearest_speed_preset, config_speed_label, &
+              config_normalize_spacecraft_camera_mode
     public :: SPACECRAFT_CAMERA_SYSTEM, SPACECRAFT_CAMERA_FOLLOW
 
     ! Time scale bounds (simulated seconds per real second)
@@ -157,5 +158,16 @@ contains
         multiplier = nint(cfg%time_scale)
         write(label, "(I0,'x real time')") multiplier
     end function config_speed_label
+
+    integer function config_normalize_spacecraft_camera_mode(mode) result(normalized)
+        integer, intent(in) :: mode
+
+        select case (mode)
+        case (SPACECRAFT_CAMERA_SYSTEM, SPACECRAFT_CAMERA_FOLLOW)
+            normalized = mode
+        case default
+            normalized = SPACECRAFT_CAMERA_SYSTEM
+        end select
+    end function config_normalize_spacecraft_camera_mode
 
 end module config_mod

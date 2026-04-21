@@ -69,6 +69,7 @@ program solarsim
                               spacecraft_system_select, spacecraft_selected_name, &
                               spacecraft_selected_id, &
                               spacecraft_count, spacecraft_name_at, spacecraft_franchise_at, &
+                              spacecraft_selected_available, &
                               spacecraft_select_next, spacecraft_select_prev, &
                               spacecraft_spawn_selected, spacecraft_reset_selected, &
                               spacecraft_despawn_selected, spacecraft_selected_spawned, &
@@ -643,21 +644,15 @@ contains
         camera_forward_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_W)) - &
                               merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_S))
 
-        if (cfg%spacecraft_enabled .and. spacecraft_selected_has_target(spacecraft)) then
+        if (cfg%spacecraft_enabled .and. spacecraft_selected_available(spacecraft)) then
             if (inp%key_just_pressed(KEY_N)) then
-                call spacecraft_select_prev(spacecraft)
-                call spacecraft_camera_selection_changed(ship_cam)
-                cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
-                call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+                call cycle_spacecraft_selection(-1)
             end if
             if (inp%key_just_pressed(KEY_M)) then
-                call spacecraft_select_next(spacecraft)
-                call spacecraft_camera_selection_changed(ship_cam)
-                cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
-                call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+                call cycle_spacecraft_selection(1)
             end if
-            if (inp%key_just_pressed(KEY_C) .and. &
-                cfg%spacecraft_camera_mode == SPACECRAFT_CAMERA_FOLLOW) then
+            if (inp%key_just_pressed(KEY_C) .and. cfg%spacecraft_camera_mode == SPACECRAFT_CAMERA_FOLLOW .and. &
+                spacecraft_selected_has_target(spacecraft)) then
                 call spacecraft_camera_toggle_inspect(ship_cam)
                 if (spacecraft_camera_inspect_enabled(ship_cam)) then
                     call log_msg(LOG_INFO, "Spacecraft inspect camera ON")
@@ -665,21 +660,23 @@ contains
                     call log_msg(LOG_INFO, "Spacecraft inspect camera OFF")
                 end if
             end if
-            thrust_axis = camera_forward_axis
-            yaw_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_D)) - &
-                       merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_A))
-            pitch_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_UP)) - &
-                         merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_DOWN))
-            roll_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_E)) - &
-                        merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_Q))
-            if (spacecraft_camera_inspect_enabled(ship_cam)) then
-                thrust_axis = 0.0_c_float
-                yaw_axis = 0.0_c_float
-                pitch_axis = 0.0_c_float
-                roll_axis = 0.0_c_float
+            if (spacecraft_selected_has_target(spacecraft)) then
+                thrust_axis = camera_forward_axis
+                yaw_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_D)) - &
+                           merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_A))
+                pitch_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_UP)) - &
+                             merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_DOWN))
+                roll_axis = merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_E)) - &
+                            merge(1.0_c_float, 0.0_c_float, inp%key_held(KEY_Q))
+                if (spacecraft_camera_inspect_enabled(ship_cam)) then
+                    thrust_axis = 0.0_c_float
+                    yaw_axis = 0.0_c_float
+                    pitch_axis = 0.0_c_float
+                    roll_axis = 0.0_c_float
+                end if
+                call spacecraft_control_selected(spacecraft, real(frame_dt, c_float), &
+                                                 thrust_axis, yaw_axis, pitch_axis, roll_axis)
             end if
-            call spacecraft_control_selected(spacecraft, real(frame_dt, c_float), &
-                                             thrust_axis, yaw_axis, pitch_axis, roll_axis)
             if (inp%key_just_pressed(KEY_F)) then
                 call spacecraft_toggle_auto_stabilize_selected(spacecraft)
                 cfg%spacecraft_auto_stabilize = spacecraft_selected_auto_stabilize(spacecraft)
@@ -708,6 +705,34 @@ contains
             call spacecraft_look_selected(spacecraft, yaw_delta, pitch_delta)
         end if
     end subroutine apply_spacecraft_mouse_camera
+
+    subroutine cycle_spacecraft_selection(direction)
+        integer, intent(in) :: direction
+
+        if (direction < 0) then
+            call spacecraft_select_prev(spacecraft)
+        else
+            call spacecraft_select_next(spacecraft)
+        end if
+        call sync_selected_spacecraft_state(.true.)
+    end subroutine cycle_spacecraft_selection
+
+    subroutine choose_spacecraft(idx)
+        integer, intent(in) :: idx
+
+        call spacecraft_system_select(spacecraft, idx)
+        call sync_selected_spacecraft_state(.true.)
+    end subroutine choose_spacecraft
+
+    subroutine sync_selected_spacecraft_state(announce)
+        logical, intent(in) :: announce
+
+        call spacecraft_camera_selection_changed(ship_cam)
+        cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
+        cfg%spacecraft_spawn_preset = trim(spacecraft_selected_spawn_preset(spacecraft))
+        cfg%spacecraft_auto_stabilize = spacecraft_selected_auto_stabilize(spacecraft)
+        if (announce) call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+    end subroutine sync_selected_spacecraft_state
 
     subroutine set_speed_preset(new_idx)
         integer, intent(in) :: new_idx
@@ -1575,22 +1600,13 @@ contains
             cfg%spacecraft_spawn_preset = "focus"
             call spacecraft_set_spawn_preset_selected(spacecraft, cfg%spacecraft_spawn_preset)
         case (ACTION_SPACECRAFT_PREV)
-            call spacecraft_select_prev(spacecraft)
-            call spacecraft_camera_selection_changed(ship_cam)
-            cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
-            call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+            call cycle_spacecraft_selection(-1)
         case (ACTION_SPACECRAFT_NEXT)
-            call spacecraft_select_next(spacecraft)
-            call spacecraft_camera_selection_changed(ship_cam)
-            cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
-            call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+            call cycle_spacecraft_selection(1)
         case default
             if (act >= ACTION_SPACECRAFT_SELECT_BASE .and. &
                 act < ACTION_SPACECRAFT_SELECT_BASE + spacecraft_count(spacecraft)) then
-                call spacecraft_system_select(spacecraft, act - ACTION_SPACECRAFT_SELECT_BASE + 1)
-                call spacecraft_camera_selection_changed(ship_cam)
-                cfg%spacecraft_default_id = trim(spacecraft_selected_id(spacecraft))
-                call log_msg(LOG_INFO, "Spacecraft: " // trim(spacecraft_selected_name(spacecraft)))
+                call choose_spacecraft(act - ACTION_SPACECRAFT_SELECT_BASE + 1)
                 return
             end if
             if (act >= ACTION_DEMO_BASE .and. act < ACTION_DEMO_BASE + DEMO_COUNT) then

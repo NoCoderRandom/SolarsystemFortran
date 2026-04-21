@@ -9,7 +9,8 @@
 module config_toml_mod
     use, intrinsic :: iso_fortran_env, only: real64
     use config_mod, only: sim_config_t, config_set_speed_preset, &
-                          config_set_time_scale, config_speed_label
+                          config_set_time_scale, config_speed_label, &
+                          config_normalize_spacecraft_camera_mode
     use logging, only: log_msg, LOG_INFO, LOG_WARN, LOG_ERROR
     implicit none
     private
@@ -62,6 +63,7 @@ contains
             call apply_pair(cfg, trim(section), trim(key), trim(value), line_no)
         end do
         close(unit)
+        cfg%spacecraft_camera_mode = config_normalize_spacecraft_camera_mode(cfg%spacecraft_camera_mode)
     end subroutine config_toml_load
 
     !---------------------------------------------------------------
@@ -129,7 +131,7 @@ contains
         write(unit, '(A)') ""
         write(unit, '(A)') "[spacecraft]"
         write(unit, '(A,L1)') "enabled = ", cfg%spacecraft_enabled
-        write(unit, '(A,I0)') "camera_mode = ", cfg%spacecraft_camera_mode
+        write(unit, '(A,I0)') "camera_mode = ", config_normalize_spacecraft_camera_mode(cfg%spacecraft_camera_mode)
         write(unit, '(A,L1)') "auto_stabilize = ", cfg%spacecraft_auto_stabilize
         write(unit, '(A,A,A)') 'default_id = "', trim(cfg%spacecraft_default_id), '"'
         write(unit, '(A,A,A)') 'spawn_preset = "', trim(cfg%spacecraft_spawn_preset), '"'
@@ -161,7 +163,8 @@ contains
         call log_msg(LOG_INFO, trim(buf))
         write(buf, '(A,L1)') "spacecraft: enabled=", cfg%spacecraft_enabled
         call log_msg(LOG_INFO, trim(buf))
-        write(buf, '(A,I0)') "spacecraft camera mode=", cfg%spacecraft_camera_mode
+        write(buf, '(A,I0)') "spacecraft camera mode=", &
+            config_normalize_spacecraft_camera_mode(cfg%spacecraft_camera_mode)
         call log_msg(LOG_INFO, trim(buf))
         write(buf, '(A,L1)') "spacecraft auto-stabilize=", cfg%spacecraft_auto_stabilize
         call log_msg(LOG_INFO, trim(buf))

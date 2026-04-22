@@ -29,7 +29,10 @@ between Fortran and the driver.
 - [Requirements](#requirements)
 - [Install on Ubuntu / Debian / WSL2](#install-on-ubuntu--debian--wsl2)
 - [Quick start](#quick-start)
+- [Helper scripts](#helper-scripts)
 - [Controls](#controls)
+- [Spacecraft](#spacecraft)
+- [Cinematic tools](#cinematic-tools)
 - [Configuration (`config.toml`)](#configuration)
 - [Project layout](#project-layout)
 - [Why Fortran 2018](#why-fortran-2018)
@@ -121,7 +124,8 @@ your package manager, then run:
 # One-shot setup for Ubuntu / Debian / WSL2.
 ./install.sh
 
-# Launch the simulator from the project root (wraps cd build && ./solarsim)
+# Launch the simulator from the project root.
+# run.sh rebuilds first if sources, shaders, or spacecraft assets changed.
 ./run.sh
 ```
 
@@ -136,6 +140,20 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j
 ./solarsim
 ```
+
+## Helper scripts
+
+The repo ships with root-level helpers so people can install, build, and run
+the simulator without learning the internal build layout first:
+
+- `./install.sh` installs Debian / Ubuntu / WSL2 dependencies, configures CMake,
+  builds the project, and runs tests when a local `tests/` directory exists
+- `./build.sh` performs an explicit CMake build from the repo root; use
+  `./build.sh release` for an optimized build or `./build.sh clean` to wipe
+  `build/` first
+- `./run.sh` launches the simulator from the correct working directory and
+  rebuilds first when the binary is missing or older than `src/`, `shaders/`,
+  or `assets/spacecraft/`
 
 ### Headless screenshots
 
@@ -184,7 +202,113 @@ On shutdown the program prints a per-slot performance report (physics,
 scene render, starfield, planets, asteroids, trails, bloom+tonemap) with
 average and peak frame times.
 
+### Spacecraft Controls
+
+When spacecraft are enabled, the `Spacecraft` top-bar menu exposes:
+
+- enable / disable spacecraft
+- select active ship
+- spawn at `Earth`, `Sun`, or `Current Focus`
+- reset / despawn the active ship
+- switch between `System` and `Follow` camera modes
+
+Keyboard controls for the active spacecraft:
+
+| Key | Action |
+|-----|--------|
+| `W` / `S` | Thrust forward / backward |
+| `A` / `D` | Yaw left / right |
+| `Up` / `Down` | Pitch up / down |
+| `Q` / `E` | Roll left / right |
+| `C` | Toggle inspect orbit camera while follow camera is active |
+| `F` | Toggle spacecraft auto-stabilize |
+| `N` / `M` | Previous / next spacecraft |
+
+The HUD shows the selected spacecraft name, ship speed, camera mode, and
+auto-stabilize state when spacecraft are enabled and a ship is active.
+
+## Spacecraft
+
+The spacecraft system is modular and kept separate from the planetary renderer
+and physics. When enabled, it adds:
+
+- separate asset loading and rendering from planets and spheres
+- menu-driven ship selection and spawn presets
+- third-person follow camera
+- inertial spacecraft controls that do not touch planetary physics
+- per-ship follow and visual tuning from the catalog
+
+Current drivable catalog:
+
+- `Voyager 1`
+- `USS Voyager`
+- `USS Enterprise NCC-1701`
+
+Additional imported assets are already in the repo and can be promoted later
+through the catalog:
+
+- `Klingon Bird-of-Prey`
+- `Negh'Var`
+- `Intrepid-type` import
+
+Menu behavior today:
+
+- `NASA` catalog entries appear automatically under the `Real` submenu
+- `Star Trek` catalog entries appear automatically under the `Trek` submenu
+- new franchise groups can be added by extending the menu builder in `src/main.f90`
+
+### Spacecraft and Movie Gallery
+
+| | |
+|---|---|
+| ![Enterprise blue shot](movies/docs/assets/enterprise_blue.png) | ![Trek reel hero shot](movies/docs/assets/hero_trek_reel.png) |
+| **Enterprise blue pass** — a close atmospheric Earth shot from the Trek movie set, useful as a clean reference for scale, lighting, and ship framing. | **Trek reel hero frame** — a stronger README hero-style still showing the follow camera and night-side Earth lighting working together. |
+| ![Mars convoy still](movies/docs/assets/mars_convoy.png) | ![Voyager Saturn story frame](movies/docs/assets/voyager_saturn_story.png) |
+| **Mars convoy** — multiple ships in one frame with enough standoff distance to keep planets reading believably in the shot. | **Voyager Saturn story frame** — the educational real-space pipeline with captions, composition, and x265 delivery output. |
+
+Spacecraft documentation:
+
+- [Add new spacecraft tutorial](movies/docs/ADD_NEW_SPACECRAFT.md)
+- [Importing new models](movies/docs/IMPORT_NEW_MODELS.md)
+- [Drive and capture guide](movies/docs/DRIVE_AND_CAPTURE.md)
+- [Shot authoring guide](movies/docs/SHOT_AUTHORING.md)
+- [Model integration and orientation paper](movies/papers/MODEL_INTEGRATION_AND_ORIENTATION.md)
+- [Imported asset notes](assets/spacecraft/imported/README.md)
+
 ---
+
+## Cinematic Tools
+
+The repo now includes a separate movie-production workspace under
+[`movies/`](movies/README.md). It is designed to stay modular so people can
+render new social clips, educational reels, and future spacecraft showcases
+without disturbing the core simulator flow.
+
+Shipped outputs include:
+
+- Trek-style master clips and a 1-minute reel
+- real-space Voyager clips and a 1-minute reel
+- a captioned educational Voyager story film
+
+Useful entry points:
+
+```bash
+# Render one cinematic shot
+bash movies/render_one.sh earth_convoy movies/output/singles
+
+# Render a full batch and assemble a reel
+bash movies/render_movies.sh movies/output/trek_batch
+
+# Recut a final reel from existing clips
+bash movies/compile_best_of.sh movies/output/20260422_trek movies/trek_reel_plan.tsv best_of_1min.mp4
+```
+
+Main movie docs:
+
+- [Cinematic movie side project](movies/README.md)
+- [AI coder workflows](movies/docs/AI_CODERS.md)
+- [Manifests and reel editing](movies/docs/MANIFESTS_AND_REELS.md)
+- [Troubleshooting guide](movies/docs/TROUBLESHOOTING.md)
 
 ## Configuration
 
@@ -233,10 +357,17 @@ earth_night    = true
 earth_normal   = true
 earth_specular = true
 saturn_rings   = true
+
+[spacecraft]
+enabled         = false
+camera_mode     = 0        # 0=System, 1=Follow
+auto_stabilize  = true
+default_id      = "voyager1"
+spawn_preset    = "earth"  # earth | sun | focus
 ```
 
 Unknown keys are warned and ignored. The parser is a minimal, handwritten
-TOML subset — flat key = value only; no arrays, no nested tables.
+TOML subset with simple named tables and scalar key/value pairs.
 
 ---
 
@@ -245,9 +376,10 @@ TOML subset — flat key = value only; no arrays, no nested tables.
 ```
 SolarsystemFortran/
 ├── install.sh               # Linux / WSL2 dependency install + build helper
+├── build.sh                 # explicit root-level CMake build wrapper
 ├── requirements/
 │   └── ubuntu-apt.txt       # apt packages consumed by install.sh
-├── run.sh                   # launch wrapper (cd build && ./solarsim)
+├── run.sh                   # launch wrapper with stale-build detection
 ├── CMakeLists.txt           # solarsim target + optional ctest + asset copy
 ├── README.md                # you are here
 ├── TECHNICAL.md             # methods, algorithms, Fortran↔GL interop
@@ -290,10 +422,12 @@ SolarsystemFortran/
 │   └── main.f90             # lifecycle + main loop
 ├── shaders/                 # GLSL 410 core (.vert / .frag pairs)
 ├── assets/
+│   ├── spacecraft/          # source/imported ship assets + runtime meshes
 │   └── planets/             # 2k surface maps (see NOTICE in assets/)
 ├── external/
 │   ├── glad/                # OpenGL function loader (vendored)
 │   └── stb/                 # stb_image.h for PNG/JPG decode (vendored)
+├── movies/                  # modular cinematic side-project and docs
 └── screenshots/             # reference renders per phase
 ```
 

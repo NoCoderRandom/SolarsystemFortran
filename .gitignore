@@ -40,6 +40,7 @@ compile_commands.json
 .DS_Store
 Thumbs.db
 desktop.ini
+*:Zone.Identifier
 
 # ---------------------------------------------------------------------------
 # Local overrides (never commit user-specific overrides)
@@ -57,6 +58,13 @@ desktop.ini
 tests/
 .codex
 .claude/
+.cursor/
+.aider*
+.roo/
+.windsurf/
+.continue/
+.augment/
+.gemini/
 PROJECT_MEMORY.md
 SPACE_STATIONS_PLAN.md
 record_demo.sh

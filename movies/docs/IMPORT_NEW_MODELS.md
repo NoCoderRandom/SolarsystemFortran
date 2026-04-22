@@ -4,6 +4,8 @@
 
 This project currently renders spacecraft from OBJ plus MTL assets that live under `assets/spacecraft/imported/`. That is the runtime contract to satisfy if you want a new ship to appear in movies or become drivable.
 
+For a precise end-to-end walkthrough, including menu behavior and exact file edits, use [Add new spacecraft tutorial](ADD_NEW_SPACECRAFT.md).
+
 ## Runtime Asset Contract
 
 Each imported spacecraft should end up as:
@@ -25,6 +27,7 @@ Important rules:
 
 See also:
 
+- [Add new spacecraft tutorial](ADD_NEW_SPACECRAFT.md)
 - [`../../assets/spacecraft/README.md`](../../assets/spacecraft/README.md)
 - [`../../assets/spacecraft/imported/README.md`](../../assets/spacecraft/imported/README.md)
 

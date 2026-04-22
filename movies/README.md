@@ -61,6 +61,7 @@ bash movies/annotate_with_captions.sh \
 ## Documentation Map
 
 - [AI coder workflows](docs/AI_CODERS.md)
+- [Add new spacecraft tutorial](docs/ADD_NEW_SPACECRAFT.md)
 - [Drive and capture guide](docs/DRIVE_AND_CAPTURE.md)
 - [Shot authoring guide](docs/SHOT_AUTHORING.md)
 - [Importing new models](docs/IMPORT_NEW_MODELS.md)

@@ -9,7 +9,7 @@ module mat4_math
 
     public :: mat4
     public :: mat4_identity, mat4_perspective, mat4_look_at
-    public :: mat4_translate, mat4_scale_xyz, mat4_rotate_y, mat4_rotate_x
+    public :: mat4_translate, mat4_scale_xyz, mat4_rotate_y, mat4_rotate_x, mat4_rotate_z
     public :: mat4_mul_vec3, mat4_to_array
 
     type, public :: mat4
@@ -150,6 +150,17 @@ contains
         r%m(2,2) =  c; r%m(2,3) = -s
         r%m(3,2) =  s; r%m(3,3) =  c
     end function mat4_rotate_x
+
+    pure function mat4_rotate_z(angle) result(r)
+        real(c_float), intent(in) :: angle
+        type(mat4) :: r
+        real(c_float) :: c, s
+        c = cos(angle)
+        s = sin(angle)
+        r = mat4_identity()
+        r%m(1,1) =  c; r%m(1,2) = -s
+        r%m(2,1) =  s; r%m(2,2) =  c
+    end function mat4_rotate_z
 
     !=====================================================================
     ! Transform a 3D vector (position) by a mat4, returning real32 vec3

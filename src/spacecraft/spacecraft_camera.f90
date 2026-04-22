@@ -12,7 +12,7 @@ module spacecraft_camera_mod
 
     real(c_float), parameter :: PI = 3.14159265358979323846_c_float
     real(c_float), parameter :: HALF_PI = 1.5707963267948966_c_float
-    real(c_float), parameter :: LOOK_SENS = 0.0030_c_float
+    real(c_float), parameter :: LOOK_SENS = 0.0022_c_float
     real(c_float), parameter :: ORBIT_SENS = 0.0020_c_float
     real(c_float), parameter :: ZOOM_SENS = 0.06_c_float
     real(c_float), parameter :: ELEV_MIN = -1.45_c_float
@@ -67,18 +67,18 @@ contains
         enabled = state%inspect_mode
     end function spacecraft_camera_inspect_enabled
 
-    subroutine spacecraft_camera_handle_mouse(state, mouse_dx, mouse_dy, scroll, lmb, mmb, &
+    subroutine spacecraft_camera_handle_mouse(state, mouse_dx, mouse_dy, scroll, lmb, mmb, rmb, &
                                               yaw_delta, pitch_delta)
         type(spacecraft_camera_state_t), intent(inout) :: state
         real(c_float), intent(in) :: mouse_dx, mouse_dy, scroll
-        logical, intent(in) :: lmb, mmb
+        logical, intent(in) :: lmb, mmb, rmb
         real(c_float), intent(out) :: yaw_delta, pitch_delta
 
         yaw_delta = 0.0_c_float
         pitch_delta = 0.0_c_float
 
         if (state%inspect_mode) then
-            if (lmb .or. mmb) then
+            if (lmb .or. mmb .or. rmb) then
                 state%inspect_azimuth = state%inspect_azimuth - mouse_dx * ORBIT_SENS
                 state%inspect_elevation = max(ELEV_MIN, min(ELEV_MAX, &
                     state%inspect_elevation + mouse_dy * ORBIT_SENS))
@@ -89,9 +89,9 @@ contains
                     state%inspect_log_dist - scroll * ZOOM_SENS))
             end if
         else
-            if (lmb .or. mmb) then
+            if (lmb .or. mmb .or. rmb) then
                 yaw_delta = -mouse_dx * LOOK_SENS
-                pitch_delta = mouse_dy * LOOK_SENS
+                pitch_delta = -mouse_dy * LOOK_SENS
             end if
             if (abs(scroll) > 0.0_c_float) then
                 state%follow_zoom_log = max(FOLLOW_ZOOM_MIN, min(FOLLOW_ZOOM_MAX, &
@@ -109,7 +109,7 @@ contains
         real(c_float), intent(in) :: base_dist, height, dt
         real(c_float) :: back(3), up_offset(3), orbit(3), dist
 
-        call camera_follow_focus(cam, target, dt, 10.0_c_float)
+        call camera_follow_focus(cam, target, dt, 16.0_c_float)
         cam%eye_override = .true.
         cam%view_up = [0.0_c_float, 1.0_c_float, 0.0_c_float]
 

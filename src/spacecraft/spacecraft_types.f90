@@ -36,6 +36,12 @@ module spacecraft_types_mod
         real(c_float) :: roll_rate = 0.0_c_float
         logical :: auto_stabilize = .true.
         logical :: pending_anchor_reset = .true.
+        logical :: demo_override = .false.
+        real(c_float) :: demo_world_pos_au(3) = [0.0_c_float, 0.0_c_float, 0.0_c_float]
+        real(c_float) :: demo_yaw = 0.0_c_float
+        real(c_float) :: demo_pitch = 0.0_c_float
+        real(c_float) :: demo_roll = 0.0_c_float
+        real(c_float) :: demo_scale_mul = 1.0_c_float
     end type spacecraft_instance_t
 
 end module spacecraft_types_mod

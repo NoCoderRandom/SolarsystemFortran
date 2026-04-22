@@ -1,0 +1,51 @@
+# Movie capture config for the cinematic side-project.
+
+[window]
+width  = 1280
+height = 720
+vsync  = T
+
+[simulation]
+speed_preset   = 13
+time_scale     = 10000.0
+trail_length   = 2048
+trails_visible = F
+hud_visible    = F
+focus_index    = 0
+
+[camera]
+azimuth   = .000
+elevation = .800
+log_dist  = 1.650
+
+[bloom]
+on        = T
+threshold = 1.000
+intensity = .900
+mips      = 5
+
+[tonemap]
+exposure         = 1.000
+sun_emissive_mul = 3.200
+
+[starfield]
+count     = 6000
+intensity = 1.000
+
+[asteroids]
+count = 1800
+a_min = 2.200
+a_max = 3.300
+
+[textures]
+earth_night    = T
+earth_normal   = T
+earth_specular = T
+saturn_rings   = T
+
+[spacecraft]
+enabled = T
+camera_mode = 0
+auto_stabilize = T
+default_id = "voyager1"
+spawn_preset = "earth"

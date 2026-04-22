@@ -4,13 +4,12 @@ module spacecraft_mod
     use, intrinsic :: iso_c_binding, only: c_float
     use body_mod, only: body_t
     use logging, only: log_msg, LOG_INFO
-    use spacecraft_types_mod, only: spacecraft_definition_t, spacecraft_instance_t
+    use spacecraft_types_mod, only: spacecraft_instance_t
     use spacecraft_catalog_mod, only: spacecraft_catalog_entry_t, &
                                       spacecraft_catalog_default, SPACECRAFT_CATALOG_COUNT
     use spacecraft_renderer_mod, only: spacecraft_renderer_t, &
                                        spacecraft_renderer_init, &
                                        spacecraft_renderer_set_model, &
-                                       spacecraft_renderer_clear_model, &
                                        spacecraft_renderer_render, &
                                        spacecraft_renderer_shutdown
     use camera_mod, only: camera_t
@@ -35,13 +34,14 @@ module spacecraft_mod
     public :: spacecraft_selected_orientation
     public :: spacecraft_selected_follow_tuning
     public :: spacecraft_set_spawn_preset_selected, spacecraft_selected_spawn_preset
+    public :: spacecraft_clear_demo_overrides, spacecraft_set_demo_pose
 
     type, public :: spacecraft_system_t
         logical :: enabled = .false.
         logical :: initialized = .false.
         integer :: selected_index = 0
-        type(spacecraft_renderer_t) :: renderer
         type(spacecraft_instance_t), allocatable :: craft(:)
+        type(spacecraft_renderer_t), allocatable :: renderers(:)
     end type spacecraft_system_t
 
 contains
@@ -49,9 +49,16 @@ contains
     subroutine spacecraft_system_init(sys, cfg)
         type(spacecraft_system_t), intent(out) :: sys
         type(sim_config_t), intent(in) :: cfg
+        integer :: i
 
-        call spacecraft_renderer_init(sys%renderer)
         call seed_framework_catalog(sys)
+        if (allocated(sys%craft)) then
+            allocate(sys%renderers(size(sys%craft)))
+            do i = 1, size(sys%renderers)
+                call spacecraft_renderer_init(sys%renderers(i))
+                call spacecraft_renderer_set_model(sys%renderers(i), sys%craft(i)%def%model_path)
+            end do
+        end if
         sys%enabled = cfg%spacecraft_enabled
         sys%selected_index = 0
         sys%initialized = .true.
@@ -102,24 +109,53 @@ contains
         type(spacecraft_system_t), intent(inout) :: sys
         type(camera_t), intent(in) :: cam
         real(c_float), intent(in) :: light_pos(3)
+        real(c_float) :: draw_pos(3), yaw, pitch, roll, scale_mul
+        logical :: demo_only
+        integer :: i
 
         if (.not. sys%initialized) return
         if (.not. sys%enabled) return
-        if (sys%selected_index < 1 .or. sys%selected_index > size(sys%craft)) return
-        if (.not. sys%craft(sys%selected_index)%active) return
-        call spacecraft_renderer_render(sys%renderer, cam, light_pos, &
-                                        sys%craft(sys%selected_index)%world_pos_au, &
-                                        sys%craft(sys%selected_index)%def%visual_scale, &
-                                        sys%craft(sys%selected_index)%def%model_pitch, &
-                                        sys%craft(sys%selected_index)%def%model_yaw)
+        if (.not. allocated(sys%craft)) return
+        if (.not. allocated(sys%renderers)) return
+
+        demo_only = any_demo_override(sys)
+        do i = 1, size(sys%craft)
+            if (demo_only) then
+                if (.not. sys%craft(i)%demo_override) cycle
+                draw_pos = sys%craft(i)%demo_world_pos_au
+                yaw = sys%craft(i)%demo_yaw
+                pitch = sys%craft(i)%demo_pitch
+                roll = sys%craft(i)%demo_roll
+                scale_mul = max(sys%craft(i)%demo_scale_mul, 1.0e-4_c_float)
+            else
+                if (.not. sys%craft(i)%active) cycle
+                draw_pos = sys%craft(i)%world_pos_au
+                yaw = sys%craft(i)%yaw
+                pitch = sys%craft(i)%pitch
+                roll = sys%craft(i)%roll
+                scale_mul = 1.0_c_float
+            end if
+
+            call spacecraft_renderer_render(sys%renderers(i), cam, light_pos, draw_pos, &
+                                            sys%craft(i)%def%visual_scale * scale_mul, &
+                                            sys%craft(i)%def%model_pitch, &
+                                            sys%craft(i)%def%model_yaw, &
+                                            yaw, pitch, roll)
+        end do
     end subroutine spacecraft_system_render
 
     subroutine spacecraft_system_shutdown(sys)
         type(spacecraft_system_t), intent(inout) :: sys
+        integer :: i
 
         if (.not. sys%initialized) return
+        if (allocated(sys%renderers)) then
+            do i = 1, size(sys%renderers)
+                call spacecraft_renderer_shutdown(sys%renderers(i))
+            end do
+            deallocate(sys%renderers)
+        end if
         if (allocated(sys%craft)) deallocate(sys%craft)
-        call spacecraft_renderer_shutdown(sys%renderer)
         sys%selected_index = 0
         sys%enabled = .false.
         sys%initialized = .false.
@@ -137,7 +173,6 @@ contains
 
         if (idx < 1 .or. idx > size(sys%craft)) then
             sys%selected_index = 0
-            call spacecraft_renderer_clear_model(sys%renderer)
         else
             sys%selected_index = idx
             call sync_selected_model(sys)
@@ -390,10 +425,12 @@ contains
 
         sys%craft(sys%selected_index)%yaw = sys%craft(sys%selected_index)%yaw + &
                                             sys%craft(sys%selected_index)%yaw_rate * dt
+        call wrap_angle(sys%craft(sys%selected_index)%yaw)
         sys%craft(sys%selected_index)%pitch = min(max(sys%craft(sys%selected_index)%pitch + &
             sys%craft(sys%selected_index)%pitch_rate * dt, -1.35_c_float), 1.35_c_float)
         sys%craft(sys%selected_index)%roll = sys%craft(sys%selected_index)%roll + &
                                              sys%craft(sys%selected_index)%roll_rate * dt
+        call wrap_angle(sys%craft(sys%selected_index)%roll)
 
         call spacecraft_forward_vector(sys%craft(sys%selected_index)%yaw, &
                                        sys%craft(sys%selected_index)%pitch, fwd)
@@ -416,9 +453,39 @@ contains
         if (.not. sys%craft(sys%selected_index)%active) return
 
         sys%craft(sys%selected_index)%yaw = sys%craft(sys%selected_index)%yaw + yaw_delta
+        call wrap_angle(sys%craft(sys%selected_index)%yaw)
         sys%craft(sys%selected_index)%pitch = min(max(sys%craft(sys%selected_index)%pitch + &
             pitch_delta, -1.35_c_float), 1.35_c_float)
+        sys%craft(sys%selected_index)%yaw_rate = 0.0_c_float
+        sys%craft(sys%selected_index)%pitch_rate = 0.0_c_float
     end subroutine spacecraft_look_selected
+
+    subroutine spacecraft_clear_demo_overrides(sys)
+        type(spacecraft_system_t), intent(inout) :: sys
+        integer :: i
+
+        if (.not. allocated(sys%craft)) return
+        do i = 1, size(sys%craft)
+            sys%craft(i)%demo_override = .false.
+            sys%craft(i)%demo_scale_mul = 1.0_c_float
+        end do
+    end subroutine spacecraft_clear_demo_overrides
+
+    subroutine spacecraft_set_demo_pose(sys, idx, world_pos_au, yaw, pitch, roll, scale_mul)
+        type(spacecraft_system_t), intent(inout) :: sys
+        integer, intent(in) :: idx
+        real(c_float), intent(in) :: world_pos_au(3)
+        real(c_float), intent(in) :: yaw, pitch, roll, scale_mul
+
+        if (.not. allocated(sys%craft)) return
+        if (idx < 1 .or. idx > size(sys%craft)) return
+        sys%craft(idx)%demo_override = .true.
+        sys%craft(idx)%demo_world_pos_au = world_pos_au
+        sys%craft(idx)%demo_yaw = yaw
+        sys%craft(idx)%demo_pitch = pitch
+        sys%craft(idx)%demo_roll = roll
+        sys%craft(idx)%demo_scale_mul = max(scale_mul, 1.0e-4_c_float)
+    end subroutine spacecraft_set_demo_pose
 
     subroutine seed_framework_catalog(sys)
         type(spacecraft_system_t), intent(inout) :: sys
@@ -529,23 +596,22 @@ contains
 
     subroutine sync_selected_model(sys)
         type(spacecraft_system_t), intent(inout) :: sys
-
         if (.not. sys%initialized) return
-        if (.not. sys%enabled) then
-            call spacecraft_renderer_clear_model(sys%renderer)
-            return
-        end if
-        if (.not. allocated(sys%craft)) then
-            call spacecraft_renderer_clear_model(sys%renderer)
-            return
-        end if
-        if (sys%selected_index < 1 .or. sys%selected_index > size(sys%craft)) then
-            call spacecraft_renderer_clear_model(sys%renderer)
-            return
-        end if
-
-        call spacecraft_renderer_set_model(sys%renderer, sys%craft(sys%selected_index)%def%model_path)
     end subroutine sync_selected_model
+
+    logical function any_demo_override(sys) result(v)
+        type(spacecraft_system_t), intent(in) :: sys
+        integer :: i
+
+        v = .false.
+        if (.not. allocated(sys%craft)) return
+        do i = 1, size(sys%craft)
+            if (sys%craft(i)%demo_override) then
+                v = .true.
+                return
+            end if
+        end do
+    end function any_demo_override
 
     integer function selected_index_from_cfg(sys, cfg) result(idx)
         type(spacecraft_system_t), intent(in) :: sys
@@ -578,5 +644,17 @@ contains
             name = "earth"
         end select
     end function normalized_spawn_preset
+
+    subroutine wrap_angle(angle)
+        real(c_float), intent(inout) :: angle
+        real(c_float), parameter :: PI = 3.14159265358979323846_c_float
+
+        do while (angle > PI)
+            angle = angle - 2.0_c_float * PI
+        end do
+        do while (angle < -PI)
+            angle = angle + 2.0_c_float * PI
+        end do
+    end subroutine wrap_angle
 
 end module spacecraft_mod

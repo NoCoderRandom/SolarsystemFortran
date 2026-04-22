@@ -5,7 +5,7 @@ module spacecraft_renderer_mod
                           set_uniform_mat4, set_uniform_vec3, set_uniform_int
     use camera_mod, only: camera_t, camera_get_view, camera_get_projection
     use mat4_math, only: mat4, mat4_translate, mat4_scale_xyz, mat4_rotate_x, &
-                         mat4_rotate_y, mat4_to_array
+                         mat4_rotate_y, mat4_rotate_z, mat4_to_array
     use gl_bindings, only: gl_bind_vertex_array, gl_draw_elements_instanced, &
                            GL_TRIANGLES, GL_UNSIGNED_INT, GL_TEXTURE0, GL_TEXTURE1
     use spacecraft_assets_mod, only: spacecraft_model_t, spacecraft_model_load_obj, &
@@ -71,7 +71,7 @@ contains
     end subroutine spacecraft_renderer_clear_model
 
     subroutine spacecraft_renderer_render(renderer, cam, light_pos, model_pos, visual_scale, &
-                                          model_pitch, model_yaw)
+                                          model_pitch, model_yaw, ship_yaw, ship_pitch, ship_roll)
         type(spacecraft_renderer_t), intent(inout) :: renderer
         type(camera_t), intent(in) :: cam
         real(c_float), intent(in) :: light_pos(3)
@@ -79,8 +79,11 @@ contains
         real(c_float), intent(in) :: visual_scale
         real(c_float), intent(in) :: model_pitch
         real(c_float), intent(in) :: model_yaw
+        real(c_float), intent(in) :: ship_yaw
+        real(c_float), intent(in) :: ship_pitch
+        real(c_float), intent(in) :: ship_roll
         real(c_float) :: view_arr(16), proj_arr(16), model_arr(16)
-        type(mat4) :: model
+        type(mat4) :: model, orient
         real(c_float), parameter :: BASE_SCALE = 0.12_c_float
         real(c_float) :: draw_scale
         integer :: i
@@ -94,9 +97,11 @@ contains
         proj_arr = camera_get_projection(cam)
         draw_scale = BASE_SCALE * max(visual_scale, 0.05_c_float)
         model = mat4_translate(model_pos(1), model_pos(2), model_pos(3))
-        model = mat4_mul_mat4(model, mat4_mul_mat4(mat4_rotate_y(model_yaw), &
-                                                   mat4_mul_mat4(mat4_rotate_x(model_pitch), &
-                                                                 mat4_scale_xyz(draw_scale, draw_scale, draw_scale))))
+        orient = mat4_mul_mat4(mat4_rotate_y(ship_yaw), &
+                               mat4_mul_mat4(mat4_rotate_x(ship_pitch), mat4_rotate_z(ship_roll)))
+        orient = mat4_mul_mat4(orient, mat4_mul_mat4(mat4_rotate_y(model_yaw), mat4_rotate_x(model_pitch)))
+        model = mat4_mul_mat4(model, mat4_mul_mat4(orient, &
+                                                   mat4_scale_xyz(draw_scale, draw_scale, draw_scale)))
         model_arr = mat4_to_array(model)
 
         call set_uniform_mat4(renderer%shader, "u_model", model_arr)

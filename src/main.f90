@@ -49,8 +49,9 @@ program solarsim
                           camera_get_projection, camera_reset, camera_set_focus, &
                           camera_handle_input, camera_move_local
     use demo_mod, only: demo_state_t, demo_overlay_t, demo_init, demo_start, demo_apply, &
-                        demo_advance, demo_name, demo_slug, demo_is_showcase, &
-                        DEMO_CAPTURE_FPS, DEMO_COUNT, MAX_DEMO_BODIES, DEMO_ID_SHOWCASE
+                        demo_advance, demo_name, demo_slug, demo_is_showcase, demo_resolve_id, &
+                        DEMO_CAPTURE_FPS, DEMO_COUNT, MAX_DEMO_BODIES, DEMO_ID_SHOWCASE, &
+                        DEMO_ID_EARTH_CONVOY
     use date_utils, only: sim_date_t, j2000_to_date
     use constants, only: AU
     use hud_text, only: hud_text_t, hud_text_init, hud_text_shutdown, &
@@ -78,7 +79,8 @@ program solarsim
                               spacecraft_look_selected, &
                               spacecraft_selected_speed_au, spacecraft_selected_auto_stabilize, &
                               spacecraft_selected_orientation, spacecraft_selected_follow_tuning, &
-                              spacecraft_set_spawn_preset_selected, spacecraft_selected_spawn_preset
+                              spacecraft_set_spawn_preset_selected, spacecraft_selected_spawn_preset, &
+                              spacecraft_clear_demo_overrides, spacecraft_set_demo_pose
     use spacecraft_camera_mod, only: spacecraft_camera_state_t, spacecraft_camera_init, &
                                      spacecraft_camera_selection_changed, spacecraft_camera_toggle_inspect, &
                                      spacecraft_camera_handle_mouse, spacecraft_camera_apply, &
@@ -161,6 +163,8 @@ program solarsim
     logical             :: running, auto_screenshot, config_dirty
     character(len=64)   :: arg1
     character(len=256)  :: arg2
+    character(len=256)  :: arg3
+    character(len=256)  :: arg4
     character(len=128)  :: screenshot_path = "../screenshots/phase8_overview.png"
     character(len=256)  :: demo_frame_dir = "screenshots/demo_frames"
     character(len=256)  :: demo_video_path = ""
@@ -171,7 +175,7 @@ program solarsim
     logical             :: demo_encode_video = .false.
     logical             :: menu_has_mouse, ship_cam_consumed
     logical             :: saved_hud_visible, saved_trails_visible, saved_bloom_on
-    logical             :: saved_distance_log_scale, saved_paused, saved_vsync
+    logical             :: saved_distance_log_scale, saved_paused, saved_vsync, saved_spacecraft_enabled
     integer             :: saved_speed_preset
 
     type(body_t), allocatable :: bodies_prev(:), bodies_interp(:), scene_bodies(:)
@@ -245,6 +249,9 @@ program solarsim
     running = .true.
     auto_screenshot = .false.
     config_dirty = .false.
+    arg2 = ""
+    arg3 = ""
+    arg4 = ""
     if (command_argument_count() >= 1) then
         call get_command_argument(1, arg1)
         if (trim(arg1) == "--screenshot") auto_screenshot = .true.
@@ -288,6 +295,16 @@ program solarsim
                 if (len_trim(arg2) > 0) demo_frame_dir = trim(arg2)
             end if
             call start_demo_mode(DEMO_ID_SHOWCASE, .true., .true.)
+        end if
+        if (trim(arg1) == "--demo-shot") then
+            if (command_argument_count() >= 2) call get_command_argument(2, arg2)
+            call start_demo_mode(demo_resolve_id(arg2), .false., .true.)
+        end if
+        if (trim(arg1) == "--demo-record-shot") then
+            if (command_argument_count() >= 2) call get_command_argument(2, arg2)
+            if (command_argument_count() >= 3) call get_command_argument(3, arg3)
+            if (command_argument_count() >= 4) call get_command_argument(4, arg4)
+            call start_demo_recording(demo_resolve_id(arg2), trim(arg3), trim(arg4), .true.)
         end if
     end if
     if (screenshot_focus >= 0 .or. screenshot_focus < -1) then
@@ -380,8 +397,11 @@ program solarsim
         !-------------------------------------------------------------------
         if (demo%active) then
             call demo_apply(demo, cam, bodies_interp, cfg%focus_index, demo_overlay)
+            call apply_demo_spacecraft_overlay()
         else
             demo_overlay%count = 0
+            demo_overlay%ship_count = 0
+            call spacecraft_clear_demo_overrides(spacecraft)
         end if
         ship_cam_consumed = .false.
         if ((.not. demo%active) .and. (.not. menu_has_mouse) .and. &
@@ -698,7 +718,7 @@ contains
         call spacecraft_camera_handle_mouse(ship_cam, real(inp%mouse_dx, c_float), &
                                             real(inp%mouse_dy, c_float), &
                                             real(inp%scroll_dy, c_float), &
-                                            inp%mouse%left, inp%mouse%middle, &
+                                            inp%mouse%left, inp%mouse%middle, inp%mouse%right, &
                                             yaw_delta, pitch_delta)
         if ((abs(yaw_delta) > 0.0_c_float .or. abs(pitch_delta) > 0.0_c_float) .and. &
             (.not. spacecraft_camera_inspect_enabled(ship_cam))) then
@@ -770,6 +790,7 @@ contains
         logical, intent(in) :: capture_frames, quit_on_finish
 
         call save_demo_runtime_state()
+        call spacecraft_clear_demo_overrides(spacecraft)
         call demo_start(demo, demo_id, capture_frames, quit_on_finish)
         cfg%hud_visible = .false.
         cfg%trails_visible = .false.
@@ -782,6 +803,7 @@ contains
             cfg%paused = .true.
             cfg%distance_log_scale = .false.
         end if
+        if (demo_id >= DEMO_ID_EARTH_CONVOY) cfg%spacecraft_enabled = .true.
         if (capture_frames) call window_set_vsync(.false.)
         call log_msg(LOG_INFO, "Demo started: " // trim(demo_name(demo_id)))
     end subroutine start_demo_mode
@@ -793,6 +815,7 @@ contains
         saved_distance_log_scale = cfg%distance_log_scale
         saved_paused = cfg%paused
         saved_vsync = cfg%vsync
+        saved_spacecraft_enabled = cfg%spacecraft_enabled
         saved_speed_preset = cfg%speed_preset
     end subroutine save_demo_runtime_state
 
@@ -803,27 +826,43 @@ contains
         cfg%distance_log_scale = saved_distance_log_scale
         cfg%paused = saved_paused
         call config_set_speed_preset(cfg, saved_speed_preset)
+        cfg%spacecraft_enabled = saved_spacecraft_enabled
         cfg%vsync = saved_vsync
         call window_set_vsync(saved_vsync)
         demo_encode_video = .false.
         demo_video_path = ""
         demo_frame_dir = "screenshots/demo_frames"
         demo_overlay%count = 0
+        demo_overlay%ship_count = 0
+        call spacecraft_clear_demo_overrides(spacecraft)
     end subroutine finish_demo_mode
 
-    subroutine start_demo_recording(demo_id)
+    subroutine start_demo_recording(demo_id, video_path_override, frame_dir_override, quit_on_finish)
         integer, intent(in) :: demo_id
+        character(len=*), intent(in), optional :: video_path_override, frame_dir_override
+        logical, intent(in), optional :: quit_on_finish
         integer :: dt(8)
+        logical :: should_quit
 
         call date_and_time(values=dt)
-        write(demo_frame_dir, "('screenshots/demo_frames_',A,'_',I4.4,I2.2,I2.2,'_',I2.2,I2.2,I2.2)") &
-            trim(demo_slug(demo_id)), dt(1), dt(2), dt(3), dt(5), dt(6), dt(7)
-        write(demo_video_path, "('screenshots/',A,'_',I4.4,I2.2,I2.2,'_',I2.2,I2.2,I2.2,'.mp4')") &
-            trim(demo_slug(demo_id)), dt(1), dt(2), dt(3), dt(5), dt(6), dt(7)
+        if (present(frame_dir_override) .and. len_trim(frame_dir_override) > 0) then
+            demo_frame_dir = trim(frame_dir_override)
+        else
+            write(demo_frame_dir, "('screenshots/demo_frames_',A,'_',I4.4,I2.2,I2.2,'_',I2.2,I2.2,I2.2)") &
+                trim(demo_slug(demo_id)), dt(1), dt(2), dt(3), dt(5), dt(6), dt(7)
+        end if
+        if (present(video_path_override) .and. len_trim(video_path_override) > 0) then
+            demo_video_path = trim(video_path_override)
+        else
+            write(demo_video_path, "('screenshots/',A,'_',I4.4,I2.2,I2.2,'_',I2.2,I2.2,I2.2,'.mp4')") &
+                trim(demo_slug(demo_id)), dt(1), dt(2), dt(3), dt(5), dt(6), dt(7)
+        end if
         call ensure_directory(trim(demo_frame_dir))
-        call ensure_directory("screenshots")
+        call ensure_parent_directory(trim(demo_video_path))
         demo_encode_video = .true.
-        call start_demo_mode(demo_id, .true., .false.)
+        should_quit = .false.
+        if (present(quit_on_finish)) should_quit = quit_on_finish
+        call start_demo_mode(demo_id, .true., should_quit)
     end subroutine start_demo_recording
 
     subroutine encode_demo_video()
@@ -857,6 +896,21 @@ contains
             scene_bodies(n + i) = demo_overlay%bodies(i)
         end do
     end subroutine compose_scene_bodies
+
+    subroutine apply_demo_spacecraft_overlay()
+        integer :: i
+
+        call spacecraft_clear_demo_overrides(spacecraft)
+        if (.not. cfg%spacecraft_enabled) return
+        do i = 1, demo_overlay%ship_count
+            call spacecraft_set_demo_pose(spacecraft, demo_overlay%ships(i)%craft_index, &
+                                          demo_overlay%ships(i)%world_pos_au, &
+                                          demo_overlay%ships(i)%yaw, &
+                                          demo_overlay%ships(i)%pitch, &
+                                          demo_overlay%ships(i)%roll, &
+                                          demo_overlay%ships(i)%scale_mul)
+        end do
+    end subroutine apply_demo_spacecraft_overlay
 
     !=====================================================================
     ! Focus camera on a body
@@ -1728,6 +1782,18 @@ contains
             call trails_push_body(trails, i, pos_au)
         end do
     end subroutine push_trails
+
+    subroutine ensure_parent_directory(path)
+        character(len=*), intent(in) :: path
+        integer :: i
+
+        i = len_trim(path)
+        do while (i > 0)
+            if (path(i:i) == "/") exit
+            i = i - 1
+        end do
+        if (i > 1) call ensure_directory(path(:i-1))
+    end subroutine ensure_parent_directory
 
     subroutine ensure_directory(path)
         character(len=*), intent(in) :: path

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" role="img" aria-labelledby="title desc">
+  <title id="title">Shot authoring flow</title>
+  <desc id="desc">A diagram showing the workflow from concept to demo code, smoke render, manifest, and final reel.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07131f"/>
+      <stop offset="100%" stop-color="#10283b"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#17324a"/>
+      <stop offset="100%" stop-color="#254a68"/>
+    </linearGradient>
+    <linearGradient id="cardWarm" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#67431d"/>
+      <stop offset="100%" stop-color="#8d622e"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#02060a" flood-opacity="0.35"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b9d7ef"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="360" fill="url(#bg)"/>
+  <circle cx="810" cy="78" r="52" fill="#f0b35d" opacity="0.9"/>
+  <circle cx="790" cy="74" r="60" fill="#f6c57c" opacity="0.12"/>
+  <circle cx="146" cy="82" r="26" fill="#5aa3d8" opacity="0.85"/>
+  <circle cx="154" cy="90" r="8" fill="#95d0f0" opacity="0.45"/>
+
+  <text x="52" y="46" font-family="DejaVu Sans, Arial, sans-serif" font-size="28" font-weight="700" fill="#f5fbff">Cinematic Shot Workflow</text>
+  <text x="52" y="72" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#c8dceb">Keep new shots modular: author once, smoke test once, then promote into a reel.</text>
+
+  <rect x="44" y="118" rx="18" ry="18" width="182" height="150" fill="url(#card)" filter="url(#shadow)"/>
+  <text x="66" y="150" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff">1. Concept</text>
+  <text x="66" y="182" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">Pick the subject,</text>
+  <text x="66" y="204" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">camera mood, and</text>
+  <text x="66" y="226" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">safe distance from</text>
+  <text x="66" y="248" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">planets.</text>
+
+  <rect x="262" y="118" rx="18" ry="18" width="202" height="150" fill="url(#card)" filter="url(#shadow)"/>
+  <text x="284" y="150" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff">2. Author</text>
+  <text x="284" y="182" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">Add ID, slug, duration,</text>
+  <text x="284" y="204" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">and one `apply_*`</text>
+  <text x="284" y="226" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">subroutine in</text>
+  <text x="284" y="248" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">`src/render/demo.f90`.</text>
+
+  <rect x="500" y="118" rx="18" ry="18" width="188" height="150" fill="url(#cardWarm)" filter="url(#shadow)"/>
+  <text x="522" y="150" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff">3. Smoke Test</text>
+  <text x="522" y="182" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#fff0d3">Preview with</text>
+  <text x="522" y="204" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#fff0d3">`./run.sh --demo-shot`</text>
+  <text x="522" y="226" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#fff0d3">then render one clip</text>
+  <text x="522" y="248" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#fff0d3">through `render_one.sh`.</text>
+
+  <rect x="724" y="118" rx="18" ry="18" width="192" height="150" fill="url(#card)" filter="url(#shadow)"/>
+  <text x="746" y="150" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff">4. Promote</text>
+  <text x="746" y="182" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">Add the shot to a TSV</text>
+  <text x="746" y="204" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">manifest, batch render,</text>
+  <text x="746" y="226" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">then recut with</text>
+  <text x="746" y="248" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" fill="#d9ebf8">`compile_best_of.sh`.</text>
+
+  <path d="M 226 193 C 238 193, 246 193, 262 193" fill="none" stroke="#b9d7ef" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M 464 193 C 476 193, 484 193, 500 193" fill="none" stroke="#f4d09a" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M 688 193 C 700 193, 708 193, 724 193" fill="none" stroke="#b9d7ef" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <text x="52" y="318" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#b6cede">Design rule: keep planets as context, not measuring sticks. Use path-derived ship heading before adding a shot to the reel manifest.</text>
+</svg>

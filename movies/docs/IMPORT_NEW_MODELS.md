@@ -129,6 +129,11 @@ Use these fields for first-pass correction:
 - `model_pitch`
 - `model_yaw`
 
+See also:
+
+- [Shot authoring guide](SHOT_AUTHORING.md)
+- [Model integration and orientation paper](../papers/MODEL_INTEGRATION_AND_ORIENTATION.md)
+
 If a ship still looks wrong in motion:
 
 - render a single smoke clip

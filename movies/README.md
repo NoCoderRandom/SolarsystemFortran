@@ -62,10 +62,13 @@ bash movies/annotate_with_captions.sh \
 
 - [AI coder workflows](docs/AI_CODERS.md)
 - [Drive and capture guide](docs/DRIVE_AND_CAPTURE.md)
+- [Shot authoring guide](docs/SHOT_AUTHORING.md)
 - [Importing new models](docs/IMPORT_NEW_MODELS.md)
 - [Manifests and reel editing](docs/MANIFESTS_AND_REELS.md)
+- [Troubleshooting guide](docs/TROUBLESHOOTING.md)
 - [Cinematic side-project whitepaper](papers/CINEMATIC_SIDE_PROJECT_WHITEPAPER.md)
 - [AI-assisted movie production note](papers/AI_ASSISTED_MOVIE_PRODUCTION.md)
+- [Model integration and orientation paper](papers/MODEL_INTEGRATION_AND_ORIENTATION.md)
 
 ## Current Files
 
@@ -87,6 +90,10 @@ bash movies/annotate_with_captions.sh \
   - trim and concatenate existing clips into a final cut
 - `annotate_with_captions.sh`
   - burn time-based text overlays into a finished clip
+- `docs/SHOT_AUTHORING.md`
+  - how to add and tune new cinematic demo shots
+- `docs/TROUBLESHOOTING.md`
+  - render-path, ffmpeg, and orientation debugging notes
 - `research/voyager1_mission_notes.md`
   - factual notes and NASA source links for the Voyager story
 

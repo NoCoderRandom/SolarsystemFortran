@@ -5,20 +5,18 @@ This folder holds engine-ready spacecraft assets that have already been converte
 ## Currently Imported
 
 - `real/voyager1`
-- `real/iss`
-- `real/space_shuttle`
-- `trek/enterprise_d`
-- `trek/enterprise_ncc_1701_tmp`
 - `trek/bird_of_prey`
-- `trek/borg_cube`
+- `trek/enterprise_ncc_1701`
+- `trek/intrepid_glb`
+- `trek/negh_var`
+- `trek/voyager_ncc_74656`
 
 ## Runtime Notes
 
 - Imported runtime assets are not raw source dumps. Heavier models were normalized and decimated before use so ship switching does not stall the app.
 - Runtime materials should resolve within the imported asset folder whenever practical.
 - `bird_of_prey` now ships with copied local TGA textures for stable runtime loading.
-- `borg_cube` currently uses material-color fallback because the local source bundle did not include the external texture files referenced by the original material.
-- `space_shuttle` is currently functional but visually weaker than the better imported ships.
+- Not every imported asset is wired into the live drivable catalog yet; the catalog in `src/spacecraft/spacecraft_catalog.f90` is the runtime gate.
 
 ## Still Pending
 
